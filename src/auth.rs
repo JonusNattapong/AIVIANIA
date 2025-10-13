@@ -180,12 +180,6 @@ pub async fn login_handler(req: Request<Body>, plugins: Arc<crate::plugin::Plugi
     // Parse JSON body for username/password
     match hyper::body::to_bytes(req.into_body()).await {
         Ok(body) => {
-            #[derive(Deserialize)]
-            struct LoginRequest {
-                username: String,
-                password: String,
-            }
-
             match serde_json::from_slice::<LoginRequest>(&body) {
                 Ok(login_req) => {
                     // Check credentials against database
@@ -239,12 +233,6 @@ pub async fn register_handler(req: Request<Body>, plugins: Arc<crate::plugin::Pl
     // Parse JSON body for username/password
     match hyper::body::to_bytes(req.into_body()).await {
         Ok(body) => {
-            #[derive(Deserialize)]
-            struct RegisterRequest {
-                username: String,
-                password: String,
-            }
-
             match serde_json::from_slice::<RegisterRequest>(&body) {
                 Ok(register_req) => {
                     // Validate input
@@ -332,4 +320,20 @@ pub async fn register_handler(req: Request<Body>, plugins: Arc<crate::plugin::Pl
         }
         Err(_) => AivianiaResponse::new(StatusCode::BAD_REQUEST).body(Body::from("Failed to read body")),
     }
+}
+
+/// Login request payload
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// Register request payload
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct RegisterRequest {
+    pub username: String,
+    pub password: String,
 }

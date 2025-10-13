@@ -12,6 +12,7 @@ use tokio_rusqlite::Connection as AsyncConnection;
 
 /// User model used by database backends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct User {
     pub id: i64,
     pub username: String,

@@ -32,6 +32,9 @@ thiserror = "1.0"
 redis = { version = "0.22", optional = true }
 sqlx = { package = "sqlx", version = "0.7", optional = true, default-features = false, features = ["runtime-tokio-rustls", "macros"] }
 web3 = { version = "0.19", default-features = false, features = ["http-tls"] }
+utoipa = { version = "4", features = ["axum_extras"], optional = true }
+utoipa-swagger-ui = { version = "6", features = ["axum"], optional = true }
+axum = "0.7"
 
 [features]
 default = []
@@ -39,6 +42,7 @@ redis = ["dep:redis"]
 sqlx = ["dep:sqlx"]
 postgres = ["dep:sqlx", "sqlx/postgres"]
 mysql = ["dep:sqlx", "sqlx/mysql"]
+utoipa = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 
 [dev-dependencies]
 tokio-test = "0.4"

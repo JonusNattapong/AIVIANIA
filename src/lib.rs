@@ -17,6 +17,8 @@ pub mod rate_limit;
 pub mod cache;
 pub mod metrics;
 pub mod blockchain;
+#[cfg(feature = "utoipa")]
+pub mod docs;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -26,7 +28,9 @@ pub use response::AivianiaResponse as Response;
 pub use middleware::Middleware;
 pub use plugin::Plugin;
 pub use config::AppConfig;
-pub use auth::{AuthService, AuthMiddleware, login_handler};
+pub use auth::{AuthService, AuthMiddleware, login_handler, register_handler, LoginRequest, RegisterRequest};
 pub use database::{Database, DatabasePlugin, User};
 pub use websocket::{WebSocketHandler, WebSocketPlugin};
 pub use blockchain::{BlockchainClient, BlockchainPlugin};
+#[cfg(feature = "utoipa")]
+pub use docs::{swagger_ui, openapi_spec};
