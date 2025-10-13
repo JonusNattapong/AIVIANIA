@@ -12,6 +12,7 @@ use crate::response::AivianiaResponse;
 use crate::database::DatabasePlugin;
 use crate::plugin::Plugin;
 use std::any::Any;
+// NOTE: `User` type available from crate::database when needed
 
 /// JWT claims structure.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -19,6 +20,15 @@ pub struct Claims {
     pub sub: String,  // Subject (user ID)
     pub exp: usize,   // Expiration time
     pub iat: usize,   // Issued at
+}
+
+/// Identity information attached to request extensions after successful auth
+#[derive(Debug, Clone)]
+pub struct AuthIdentity {
+    pub user_id: i64,
+    pub username: String,
+    pub roles: Vec<String>,
+    pub claims: Claims,
 }
 
 /// Auth service for token management.
@@ -84,6 +94,7 @@ impl AuthMiddleware {
 impl Middleware for AuthMiddleware {
     fn before(&self, mut req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         let auth = self.auth_service.clone();
+        // attempt to clone plugin manager from request extensions for DB lookup
         Box::pin(async move {
             // Check for Authorization header
             if let Some(auth_header) = req.headers().get("authorization") {
@@ -92,13 +103,51 @@ impl Middleware for AuthMiddleware {
                         let token = &auth_str[7..]; // Remove "Bearer " prefix
                         match auth.validate_token(token) {
                             Ok(claims) => {
-                                // Token is valid, insert claims into request extensions for downstream use
-                                println!("Authenticated user: {}", claims.sub);
+                                // Token is valid, attempt to resolve user from DB plugin if available
+                                println!("Authenticated token subject: {}", claims.sub);
+                                // claims.sub represents the username in our implementation
+                                if let Some(plugin_mgr_any) = req.extensions().get::<Arc<crate::plugin::PluginManager>>() {
+                                    // We have a PluginManager stored in request extensions
+                                    let plugin_mgr = plugin_mgr_any.clone();
+                                    if let Some(db_plugin) = plugin_mgr.get("db") {
+                                        if let Some(db) = db_plugin.as_any().downcast_ref::<DatabasePlugin>() {
+                                            match db.db().get_user(&claims.sub).await {
+                                                Ok(Some(user)) => {
+                                                    // load roles
+                                                    match db.db().get_user_roles(user.id).await {
+                                                        Ok(roles) => {
+                                                            let identity = AuthIdentity {
+                                                                user_id: user.id,
+                                                                username: user.username.clone(),
+                                                                roles,
+                                                                claims: claims.clone(),
+                                                            };
+                                                            req.extensions_mut().insert(identity);
+                                                            return Ok(req);
+                                                        }
+                                                        Err(_) => {
+                                                            return Err(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to load roles")).unwrap());
+                                                        }
+                                                    }
+                                                }
+                                                Ok(None) => {
+                                                    // Token valid but user not found
+                                                    return Err(Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::from("User not found")).unwrap());
+                                                }
+                                                Err(_) => {
+                                                    return Err(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Database error")) .unwrap());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Fallback: insert claims only when DB/plugin not available
                                 req.extensions_mut().insert(claims);
                                 return Ok(req);
                             }
-                            Err(_) => {
-                                println!("Invalid token");
+                            Err(err) => {
+                                println!("Invalid token: {}", err);
                                 return Err(Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::from("Invalid token")).unwrap());
                             }
                         }
@@ -114,8 +163,16 @@ impl Middleware for AuthMiddleware {
 
 /// Helper function to extract user ID from request (placeholder).
 pub fn get_user_id_from_request(_req: &Request<Body>) -> Option<String> {
-    // In real implementation, extract from JWT claims stored in request extensions
-    Some("user123".to_string())
+    // Extract username/subject from claims or AuthIdentity in request extensions
+    if let Some(claims) = _req.extensions().get::<Claims>() {
+        return Some(claims.sub.clone());
+    }
+
+    if let Some(identity) = _req.extensions().get::<AuthIdentity>() {
+        return Some(identity.username.clone());
+    }
+
+    None
 }
 
 /// Example login handler.
