@@ -6,11 +6,16 @@ pub mod router;
 pub mod request;
 pub mod response;
 pub mod middleware;
+pub mod middleware_ext;
 pub mod plugin;
 pub mod auth;
 pub mod database;
 pub mod websocket;
 pub mod config;
+pub mod errors;
+pub mod rate_limit;
+pub mod cache;
+pub mod metrics;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;

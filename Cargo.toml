@@ -26,6 +26,18 @@ reqwest = { version = "0.11", features = ["json"] }
 config = "0.14"
 serde_yaml = "0.9"
 dotenvy = "0.15"
+prometheus = "0.14"
+once_cell = "1.20"
+thiserror = "1.0"
+redis = { version = "0.22", optional = true }
+sqlx = { package = "sqlx", version = "0.7", optional = true, default-features = false, features = ["runtime-tokio-rustls", "macros"] }
+
+[features]
+default = []
+redis = ["dep:redis"]
+sqlx = ["dep:sqlx"]
+postgres = ["dep:sqlx", "sqlx/postgres"]
+mysql = ["dep:sqlx", "sqlx/mysql"]
 
 [dev-dependencies]
 tokio-test = "0.4"
