@@ -62,15 +62,93 @@ impl AivianiaServer {
                         // Increment global request counter for metrics
                         metrics::REQUEST_COUNTER.inc();
 
-                        // Health endpoint
-                        if req.uri().path() == "/health" && req.method() == hyper::Method::GET {
-                            let resp = HyperResponse::builder()
-                                .status(StatusCode::OK)
-                                .header("content-type", "text/plain")
-                                .body(Body::from("ok"))
-                                .unwrap();
-                            return Ok::<_, hyper::Error>(resp);
-                        }
+                            // Readiness endpoint: ensure critical plugins like DB are present and reachable
+                            if req.uri().path() == "/ready" && req.method() == hyper::Method::GET {
+                                // Default not ready
+                                let mut ready = false;
+                                let mut details = serde_json::json!({});
+                                if let Some(db_plugin) = plugins.get("db") {
+                                    if let Some(db) = db_plugin.as_any().downcast_ref::<crate::database::DatabasePlugin>() {
+                                        match db.db().ping().await {
+                                            Ok(true) => {
+                                                ready = true;
+                                                details["database"] = serde_json::json!({"status": "ok"});
+                                            }
+                                            Ok(false) => {
+                                                details["database"] = serde_json::json!({"status": "no response"});
+                                            }
+                                            Err(e) => {
+                                                details["database"] = serde_json::json!({"status": "error", "error": format!("{}", e)});
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    details["database"] = serde_json::json!({"status": "missing"});
+                                }
+
+                                let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+                                let body = serde_json::to_string(&serde_json::json!({"ready": ready, "details": details})).unwrap();
+                                let resp = HyperResponse::builder()
+                                    .status(status)
+                                    .header("content-type", "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap();
+                                return Ok::<_, hyper::Error>(resp);
+                            }
+
+                            // Liveness health endpoint
+                            if req.uri().path() == "/health" && req.method() == hyper::Method::GET {
+                                let resp = HyperResponse::builder()
+                                    .status(StatusCode::OK)
+                                    .header("content-type", "text/plain")
+                                    .body(Body::from("ok"))
+                                    .unwrap();
+                                return Ok::<_, hyper::Error>(resp);
+                            }
+
+                            // Prometheus-style health endpoints returning JSON
+                            if req.uri().path() == "/healthz" && req.method() == hyper::Method::GET {
+                                let body = serde_json::to_string(&serde_json::json!({"status": "ok"})).unwrap();
+                                let resp = HyperResponse::builder()
+                                    .status(StatusCode::OK)
+                                    .header("content-type", "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap();
+                                return Ok::<_, hyper::Error>(resp);
+                            }
+
+                            if req.uri().path() == "/readyz" && req.method() == hyper::Method::GET {
+                                // Delegate to /ready logic to compute JSON readiness
+                                // We'll call the same code path by crafting a minimal check here
+                                let mut ready = false;
+                                let mut details = serde_json::json!({});
+                                if let Some(db_plugin) = plugins.get("db") {
+                                    if let Some(db) = db_plugin.as_any().downcast_ref::<crate::database::DatabasePlugin>() {
+                                        match db.db().ping().await {
+                                            Ok(true) => {
+                                                ready = true;
+                                                details["database"] = serde_json::json!({"status": "ok"});
+                                            }
+                                            Ok(false) => {
+                                                details["database"] = serde_json::json!({"status": "no response"});
+                                            }
+                                            Err(e) => {
+                                                details["database"] = serde_json::json!({"status": "error", "error": format!("{}", e)});
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    details["database"] = serde_json::json!({"status": "missing"});
+                                }
+                                let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+                                let body = serde_json::to_string(&serde_json::json!({"ready": ready, "details": details})).unwrap();
+                                let resp = HyperResponse::builder()
+                                    .status(status)
+                                    .header("content-type", "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap();
+                                return Ok::<_, hyper::Error>(resp);
+                            }
 
                         // Readiness endpoint: ensure critical plugins like DB are present
                         if req.uri().path() == "/ready" && req.method() == hyper::Method::GET {

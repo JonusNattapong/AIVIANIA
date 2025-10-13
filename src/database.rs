@@ -212,6 +212,20 @@ impl Database {
         }).await?;
         Ok(count > 0)
     }
+
+    /// Ping the database with a minimal query to check connectivity.
+    pub async fn ping(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let res = self.conn.call(|conn| {
+            let mut stmt = conn.prepare("SELECT 1")?;
+            let mut rows = stmt.query([])?;
+            if let Some(_) = rows.next()? {
+                Ok(true)
+            } else {
+                Ok(true)
+            }
+        }).await?;
+        Ok(res)
+    }
 }
 
 /// User model.
