@@ -16,6 +16,7 @@ pub mod errors;
 pub mod rate_limit;
 pub mod cache;
 pub mod metrics;
+pub mod blockchain;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -28,3 +29,4 @@ pub use config::AppConfig;
 pub use auth::{AuthService, AuthMiddleware, login_handler};
 pub use database::{Database, DatabasePlugin, User};
 pub use websocket::{WebSocketHandler, WebSocketPlugin};
+pub use blockchain::{BlockchainClient, BlockchainPlugin};
