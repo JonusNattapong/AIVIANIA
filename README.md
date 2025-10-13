@@ -175,18 +175,69 @@ AIVIANIA uses SQLite with the following tables:
 
 Default roles: `admin`, `user`. New users get `user` role automatically.
 
-## Modules
+## Configuration
 
-- `lib.rs`: Main library exports.
-- `server.rs`: Server setup and lifecycle.
-- `router.rs`: Routing logic and route matching.
-- `request.rs`: Request wrapper utilities.
-- `response.rs`: Response helpers (JSON, HTML).
-- `middleware.rs`: Middleware traits and stack (Auth, RBAC, Logging).
-- `auth.rs`: JWT authentication service and handlers.
-- `database.rs`: SQLite database operations and user/role management.
-- `websocket.rs`: WebSocket handler with upgrade, connections, and broadcasting.
-- `plugin.rs`: Plugin system for extensions.
+AIVIANIA supports configuration through environment variables, YAML/TOML files, and defaults.
+
+### Configuration Sources (in priority order):
+1. Environment variables (prefix: `AIVIANIA_`, e.g., `AIVIANIA_SERVER__HOST=0.0.0.0`)
+2. `config.yml` or `config.toml` files
+3. Default values
+
+### Sample Configuration (`config.yml`):
+
+```yaml
+server:
+  host: "127.0.0.1"
+  port: 3000
+  workers: 4
+
+database:
+  url: "sqlite:aiviania.db"
+  max_connections: 10
+  connection_timeout: 30
+
+auth:
+  jwt_secret: "your-super-secret-jwt-key-change-this-in-production"
+  jwt_expiration_hours: 24
+  bcrypt_cost: 12
+
+websocket:
+  max_connections: 1000
+  heartbeat_interval: 30
+  max_message_size: 65536
+
+logging:
+  level: "info"
+  format: "json"
+```
+
+### Environment Variables:
+
+```bash
+export AIVIANIA_SERVER__HOST=0.0.0.0
+export AIVIANIA_SERVER__PORT=8080
+export AIVIANIA_DATABASE__URL="sqlite:prod.db"
+export AIVIANIA_AUTH__JWT_SECRET="your-secret"
+```
+
+### Using Configuration in Code:
+
+```rust
+use aiviania::AppConfig;
+
+let config = AppConfig::load().unwrap_or_else(|e| {
+    eprintln!("Config error: {}", e);
+    AppConfig::default()
+});
+
+if let Err(e) = config.validate() {
+    eprintln!("Invalid config: {}", e);
+    std::process::exit(1);
+}
+
+println!("Server will run on {}", config.server_addr());
+```
 
 ## Extending AIVIANIA
 

@@ -1,0 +1,26 @@
+# AIVIANIA Configuration File
+# This is a sample configuration file. Copy to config.yml or config.toml
+
+server:
+  host: "127.0.0.1"
+  port: 3000
+  workers: 4
+
+database:
+  url: "sqlite:aiviania.db"
+  max_connections: 10
+  connection_timeout: 30
+
+auth:
+  jwt_secret: "your-super-secret-jwt-key-change-this-in-production"
+  jwt_expiration_hours: 24
+  bcrypt_cost: 12
+
+websocket:
+  max_connections: 1000
+  heartbeat_interval: 30
+  max_message_size: 65536
+
+logging:
+  level: "info"
+  format: "json"

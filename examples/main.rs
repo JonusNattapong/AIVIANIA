@@ -24,6 +24,21 @@ struct JsonResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Load configuration
+    let config = AppConfig::load().unwrap_or_else(|e| {
+        eprintln!("Failed to load config: {}, using defaults", e);
+        AppConfig::default()
+    });
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        eprintln!("Configuration validation failed: {}", e);
+        std::process::exit(1);
+    }
+
+    println!("Starting AIVIANIA server on {}", config.server_addr());
+    println!("Database: {}", config.database.url);
+    println!("JWT expiration: {} hours", config.auth.jwt_expiration_hours);
     // Create router
     let mut router = Router::new();
 
@@ -49,11 +64,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     router.add_route(Route::new("POST", "/login", login_handler));
     router.add_route(Route::new("POST", "/register", register_handler));
 
-    // Protected routes with role-based access
-    // ...existing code...
-
-    // Initialize database and auth_service before protected routes
-    let auth_service = Arc::new(AuthService::new("super-secret-key"));
+    // Initialize database and auth_service using config
+    let auth_service = Arc::new(AuthService::new(&config.auth.jwt_secret));
     let db = Arc::new(Database::new().await?);
 
     router.add_route(Route::new("GET", "/admin/dashboard", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
@@ -149,10 +161,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_plugin(Box::new(AIPlugin::new("dummy-api-key".to_string())))
         .with_plugin(Box::new(DatabasePlugin::new(db)))
         .with_plugin(Box::new(WebSocketPlugin::new()))
-        .with_plugin(Box::new(AuthService::new("super-secret-key")));
+        .with_plugin(Box::new(AuthService::new(&config.auth.jwt_secret)));
 
     // Note: Auth service is now added as a plugin for token generation
 
     // Run server
-    server.run("127.0.0.1:3000").await
+    server.run(&config.server_addr()).await
 }
