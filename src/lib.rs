@@ -19,6 +19,7 @@ pub mod metrics;
 pub mod blockchain;
 #[cfg(feature = "utoipa")]
 pub mod docs;
+pub mod session;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -34,3 +35,6 @@ pub use websocket::{WebSocketHandler, WebSocketPlugin};
 pub use blockchain::{BlockchainClient, BlockchainPlugin};
 #[cfg(feature = "utoipa")]
 pub use docs::{swagger_ui, openapi_spec};
+pub use session::{SessionManager, SessionMiddleware, SessionData, MemorySessionStore};
+#[cfg(feature = "redis")]
+pub use session::RedisSessionStore;

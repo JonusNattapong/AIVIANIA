@@ -35,6 +35,8 @@ web3 = { version = "0.19", default-features = false, features = ["http-tls"] }
 utoipa = { version = "4", features = ["axum_extras"], optional = true }
 utoipa-swagger-ui = { version = "6", features = ["axum"], optional = true }
 axum = "0.7"
+uuid = { version = "1.0", features = ["v4"] }
+cookie = "0.18"
 
 [features]
 default = []
@@ -47,4 +49,3 @@ utoipa = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.0"
-uuid = { version = "1.0", features = ["v4"] }
