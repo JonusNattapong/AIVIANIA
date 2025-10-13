@@ -37,6 +37,7 @@ utoipa-swagger-ui = { version = "6", features = ["axum"], optional = true }
 axum = "0.7"
 uuid = { version = "1.0", features = ["v4"] }
 cookie = "0.18"
+futures = "0.3"
 
 [features]
 default = []

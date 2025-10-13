@@ -20,6 +20,7 @@ pub mod blockchain;
 #[cfg(feature = "utoipa")]
 pub mod docs;
 pub mod session;
+pub mod jobs;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -38,3 +39,6 @@ pub use docs::{swagger_ui, openapi_spec};
 pub use session::{SessionManager, SessionMiddleware, SessionData, MemorySessionStore};
 #[cfg(feature = "redis")]
 pub use session::RedisSessionStore;
+pub use jobs::{JobManager, JobWorker, Job, JobPriority, JobStatus, MemoryJobQueue};
+#[cfg(feature = "redis")]
+pub use jobs::RedisJobQueue;
