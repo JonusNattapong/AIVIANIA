@@ -159,7 +159,7 @@ impl AivianiaServer {
                         // Readiness endpoint: ensure critical plugins like DB are present
                         if req.uri().path() == "/ready" && req.method() == hyper::Method::GET {
                             // Check for database plugin
-                            let ready = if let Some(db_plugin) = plugins.get("db") {
+                            let ready = if let Some(_db_plugin) = plugins.get("db") {
                                 // presence of plugin is considered OK; more advanced checks may ping DB
                                 true
                             } else {

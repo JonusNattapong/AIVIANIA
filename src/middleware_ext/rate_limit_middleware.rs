@@ -15,7 +15,7 @@ impl RateLimitMiddleware {
 }
 
 impl crate::middleware::Middleware for RateLimitMiddleware {
-    fn before(&self, mut req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         let limiter = self.limiter.clone();
         let key = format!("{}:{}", self.key_prefix, req.uri().path());
         Box::pin(async move {

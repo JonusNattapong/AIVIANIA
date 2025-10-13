@@ -194,12 +194,12 @@ impl SessionStore for RedisSessionStore {
 
 /// Database session store using the framework's database abstraction
 pub struct DatabaseSessionStore {
-    database: Arc<dyn crate::database::DbBackend>,
+    _database: Arc<dyn crate::database::DbBackend>,
 }
 
 impl DatabaseSessionStore {
     pub fn new(database: Arc<dyn crate::database::DbBackend>) -> Self {
-        Self { database }
+        Self { _database: database }
     }
 }
 
