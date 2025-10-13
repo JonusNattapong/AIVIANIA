@@ -1,6 +1,8 @@
 # AIVIANIA - Async-First Rust Web Framework
 
-![AIVIANIA Logo](asset/logo.png)
+<p align="center">
+  <img src="asset/logo.png" alt="AIVIANIA Logo" width="256" height="256">
+</p>
 
 AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It provides routing, middleware support, JWT authentication, RBAC (Role-Based Access Control), WebSocket real-time communication, SQLite persistence, and a plugin system for extensibility, with a focus on enterprise-ready applications.
 
