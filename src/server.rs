@@ -51,24 +51,57 @@ impl AivianiaServer {
             let plugins = plugins.clone();
 
             async move {
-                Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
+                Ok::<_, hyper::Error>(service_fn(move |mut req: Request<Body>| {
                     let router = router.clone();
                     let middleware = middleware.clone();
                     let plugins = plugins.clone();
                     async move {
-                            // Increment global request counter for metrics
-                            metrics::REQUEST_COUNTER.inc();
+                        // Attach plugins manager to request extensions so middlewares/handlers can access plugins
+                        req.extensions_mut().insert(plugins.clone());
 
-                            // If the request is for /metrics, return metrics text directly
-                            if req.uri().path() == "/metrics" && req.method() == hyper::Method::GET {
-                                let body = metrics::gather_metrics();
-                                let resp = HyperResponse::builder()
-                                    .status(StatusCode::OK)
-                                    .header("content-type", "text/plain; version=0.0.4")
-                                    .body(Body::from(body))
-                                    .unwrap();
-                                return Ok::<_, hyper::Error>(resp);
-                            }
+                        // Increment global request counter for metrics
+                        metrics::REQUEST_COUNTER.inc();
+
+                        // Health endpoint
+                        if req.uri().path() == "/health" && req.method() == hyper::Method::GET {
+                            let resp = HyperResponse::builder()
+                                .status(StatusCode::OK)
+                                .header("content-type", "text/plain")
+                                .body(Body::from("ok"))
+                                .unwrap();
+                            return Ok::<_, hyper::Error>(resp);
+                        }
+
+                        // Readiness endpoint: ensure critical plugins like DB are present
+                        if req.uri().path() == "/ready" && req.method() == hyper::Method::GET {
+                            // Check for database plugin
+                            let ready = if let Some(db_plugin) = plugins.get("db") {
+                                // presence of plugin is considered OK; more advanced checks may ping DB
+                                true
+                            } else {
+                                false
+                            };
+                            let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+                            let body = if ready { "ready" } else { "not ready" };
+                            let resp = HyperResponse::builder()
+                                .status(status)
+                                .header("content-type", "text/plain")
+                                .body(Body::from(body))
+                                .unwrap();
+                            return Ok::<_, hyper::Error>(resp);
+                        }
+
+                        // If the request is for /metrics, return metrics text directly
+                        if req.uri().path() == "/metrics" && req.method() == hyper::Method::GET {
+                            let body = metrics::gather_metrics();
+                            let resp = HyperResponse::builder()
+                                .status(StatusCode::OK)
+                                .header("content-type", "text/plain; version=0.0.4")
+                                .body(Body::from(body))
+                                .unwrap();
+                            return Ok::<_, hyper::Error>(resp);
+                        }
+
                         // Apply before middleware (short-circuit if one returns Err)
                         match middleware.before(req).await {
                             Ok(req) => {
@@ -93,3 +126,4 @@ impl AivianiaServer {
         Ok(())
     }
 }
+

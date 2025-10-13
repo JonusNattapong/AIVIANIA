@@ -1,0 +1,6 @@
+# Prometheus scrape job for AIVIANIA
+scrape_configs:
+  - job_name: 'aiviania'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:3000']
