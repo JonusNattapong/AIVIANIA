@@ -111,3 +111,116 @@ impl Middleware for RoleMiddleware {
 }
 
 // Duplicate simple RoleMiddleware removed; RBAC-capable RoleMiddleware above is used instead.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::{Request, Body, Method, StatusCode};
+
+    // Mock middleware that adds a header in before
+    struct MockBeforeMiddleware;
+    impl Middleware for MockBeforeMiddleware {
+        fn before(&self, mut req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+            Box::pin(async move {
+                req.headers_mut().insert("x-mock", "before".parse().unwrap());
+                Ok(req)
+            })
+        }
+    }
+
+    // Mock middleware that adds a header in after
+    struct MockAfterMiddleware;
+    impl Middleware for MockAfterMiddleware {
+        fn after(&self, mut resp: Response<Body>) -> Pin<Box<dyn Future<Output = Response<Body>> + Send>> {
+            Box::pin(async move {
+                resp.headers_mut().insert("x-mock", "after".parse().unwrap());
+                resp
+            })
+        }
+    }
+
+    // Mock middleware that short-circuits
+    struct MockShortCircuitMiddleware;
+    impl Middleware for MockShortCircuitMiddleware {
+        fn before(&self, _req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+            Box::pin(async move {
+                Err(Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Short-circuited")).unwrap())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_middleware_stack_new() {
+        let stack = MiddlewareStack::new();
+        assert!(stack.middlewares.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_middleware_stack_add() {
+        let mut stack = MiddlewareStack::new();
+        stack.add(Box::new(LoggingMiddleware));
+        assert_eq!(stack.middlewares.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_middleware_stack_before_success() {
+        let mut stack = MiddlewareStack::new();
+        stack.add(Box::new(MockBeforeMiddleware));
+        
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        
+        let result = stack.before(req).await;
+        assert!(result.is_ok());
+        let req = result.unwrap();
+        assert_eq!(req.headers().get("x-mock").unwrap(), "before");
+    }
+
+    #[tokio::test]
+    async fn test_middleware_stack_before_short_circuit() {
+        let mut stack = MiddlewareStack::new();
+        stack.add(Box::new(MockShortCircuitMiddleware));
+        
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        
+        let result = stack.before(req).await;
+        assert!(result.is_err());
+        let resp = result.unwrap_err();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_middleware_stack_after() {
+        let mut stack = MiddlewareStack::new();
+        stack.add(Box::new(MockAfterMiddleware));
+        
+        let resp = Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::empty())
+            .unwrap();
+        
+        let result = stack.after(resp).await;
+        assert_eq!(result.headers().get("x-mock").unwrap(), "after");
+    }
+
+    #[tokio::test]
+    async fn test_logging_middleware() {
+        let middleware = LoggingMiddleware;
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        
+        let result = middleware.before(req).await;
+        assert!(result.is_ok());
+        // Logging is just println, hard to test output, but ensures no panic
+    }
+}

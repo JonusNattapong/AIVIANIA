@@ -59,3 +59,79 @@ impl From<AivianiaResponse> for Response<Body> {
         builder.body(resp.body).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::StatusCode;
+    use serde_json::json;
+
+    #[test]
+    fn test_new_response() {
+        let resp = AivianiaResponse::new(StatusCode::OK);
+        assert_eq!(resp.status, StatusCode::OK);
+        assert_eq!(resp.headers.len(), 0);
+    }
+
+    #[test]
+    fn test_json_response() {
+        let data = json!({"message": "hello", "status": "success"});
+        let resp = AivianiaResponse::new(StatusCode::OK).json(&data);
+        
+        assert_eq!(resp.status, StatusCode::OK);
+        assert_eq!(resp.headers.len(), 1);
+        assert_eq!(resp.headers[0], ("Content-Type".to_string(), "application/json".to_string()));
+        
+        // Convert to hyper response and check body
+        let hyper_resp: Response<Body> = resp.into();
+        assert_eq!(hyper_resp.status(), StatusCode::OK);
+        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "application/json");
+    }
+
+    #[test]
+    fn test_html_response() {
+        let html = "<h1>Hello World</h1>";
+        let resp = AivianiaResponse::new(StatusCode::OK).html(html);
+        
+        assert_eq!(resp.status, StatusCode::OK);
+        assert_eq!(resp.headers.len(), 1);
+        assert_eq!(resp.headers[0], ("Content-Type".to_string(), "text/html".to_string()));
+        
+        let hyper_resp: Response<Body> = resp.into();
+        assert_eq!(hyper_resp.status(), StatusCode::OK);
+        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "text/html");
+    }
+
+    #[test]
+    fn test_custom_headers() {
+        let resp = AivianiaResponse::new(StatusCode::OK)
+            .header("X-Custom", "value")
+            .header("Authorization", "Bearer token");
+        
+        assert_eq!(resp.headers.len(), 2);
+        assert!(resp.headers.contains(&("X-Custom".to_string(), "value".to_string())));
+        assert!(resp.headers.contains(&("Authorization".to_string(), "Bearer token".to_string())));
+    }
+
+    #[test]
+    fn test_body_method() {
+        let body_content = "Custom body content";
+        let resp = AivianiaResponse::new(StatusCode::OK)
+            .body(Body::from(body_content));
+        
+        let hyper_resp: Response<Body> = resp.into();
+        assert_eq!(hyper_resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_into_hyper_response() {
+        let resp = AivianiaResponse::new(StatusCode::NOT_FOUND)
+            .header("X-Error", "Not Found")
+            .json(&json!({"error": "Resource not found"}));
+        
+        let hyper_resp: Response<Body> = resp.into();
+        assert_eq!(hyper_resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(hyper_resp.headers().get("x-error").unwrap(), "Not Found");
+        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "application/json");
+    }
+}

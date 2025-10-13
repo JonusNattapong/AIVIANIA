@@ -92,3 +92,99 @@ impl Router {
         route_path == req_path
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::{Request, Body, Method};
+    use std::sync::Arc;
+    use crate::plugin::PluginManager;
+
+    // Mock middleware for testing
+    struct MockMiddleware;
+    impl crate::middleware::Middleware for MockMiddleware {
+        fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+            Box::pin(async { Ok(req) })
+        }
+        fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send>> {
+            Box::pin(async { resp })
+        }
+    }
+
+    // Helper to create a dummy plugin manager
+    fn dummy_plugin_manager() -> Arc<PluginManager> {
+        Arc::new(PluginManager::new())
+    }
+
+    // Helper handler for testing
+    async fn test_handler(_req: Request<Body>, _plugins: Arc<PluginManager>) -> AivianiaResponse {
+        AivianiaResponse::new(StatusCode::OK).json(&serde_json::json!({"message": "test"}))
+    }
+
+    #[tokio::test]
+    async fn test_router_new() {
+        let router = Router::new();
+        assert!(router.routes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_add_route() {
+        let mut router = Router::new();
+        let route = Route::new("GET", "/test", test_handler);
+        router.add_route(route);
+        
+        assert!(router.routes.contains_key("GET"));
+        assert_eq!(router.routes["GET"].len(), 1);
+        assert_eq!(router.routes["GET"][0].path, "/test");
+    }
+
+    #[tokio::test]
+    async fn test_route_with_middleware() {
+        let route = Route::new("GET", "/test", test_handler)
+            .with_middleware(Box::new(MockMiddleware));
+        
+        assert_eq!(route.middleware.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_matching_route() {
+        let mut router = Router::new();
+        let route = Route::new("GET", "/test", test_handler);
+        router.add_route(route);
+        
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
+        
+        let plugins = dummy_plugin_manager();
+        let resp = router.handle(req, plugins).await;
+        
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "application/json");
+    }
+
+    #[tokio::test]
+    async fn test_handle_no_matching_route() {
+        let router = Router::new();
+        
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/nonexistent")
+            .body(Body::empty())
+            .unwrap();
+        
+        let plugins = dummy_plugin_manager();
+        let resp = router.handle(req, plugins).await;
+        
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_matches() {
+        let router = Router::new();
+        assert!(router.matches("/test", "/test"));
+        assert!(!router.matches("/test", "/other"));
+    }
+}
