@@ -7,6 +7,8 @@ use hyper::{Server, service::{make_service_fn, service_fn}, Request, Body};
 use crate::router::Router;
 use crate::middleware::MiddlewareStack;
 use crate::plugin::PluginManager;
+use crate::metrics;
+use hyper::{Response as HyperResponse, StatusCode};
 
 /// Main server struct.
 pub struct AivianiaServer {
@@ -54,6 +56,19 @@ impl AivianiaServer {
                     let middleware = middleware.clone();
                     let plugins = plugins.clone();
                     async move {
+                            // Increment global request counter for metrics
+                            metrics::REQUEST_COUNTER.inc();
+
+                            // If the request is for /metrics, return metrics text directly
+                            if req.uri().path() == "/metrics" && req.method() == hyper::Method::GET {
+                                let body = metrics::gather_metrics();
+                                let resp = HyperResponse::builder()
+                                    .status(StatusCode::OK)
+                                    .header("content-type", "text/plain; version=0.0.4")
+                                    .body(Body::from(body))
+                                    .unwrap();
+                                return Ok::<_, hyper::Error>(resp);
+                            }
                         // Apply before middleware (short-circuit if one returns Err)
                         match middleware.before(req).await {
                             Ok(req) => {
