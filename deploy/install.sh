@@ -69,11 +69,17 @@ echo "Installed aiviania to $INSTALL_DIR"
 
 if [ "${1:-}" = "--package" ]; then
   echo "Building minimal .deb package"
-  PKGDIR=package_deb
-  rm -rf "$PKGDIR"
-  mkdir -p "$PKGDIR/DEBIAN" "$PKGDIR/opt/aiviania"
-  cp "$BINARY_PATH" "$PKGDIR/opt/aiviania/aiviania"
-  cat > "$PKGDIR/DEBIAN/control" <<EOF
+  if command -v cargo-deb >/dev/null 2>&1; then
+    echo "Using cargo-deb to build a .deb package"
+    cargo install cargo-deb || true
+    cargo deb --no-build --output aiviania_0.1.0_amd64.deb || true
+  else
+    echo "cargo-deb not found, falling back to dpkg-deb skeleton"
+    PKGDIR=package_deb
+    rm -rf "$PKGDIR"
+    mkdir -p "$PKGDIR/DEBIAN" "$PKGDIR/opt/aiviania"
+    cp "$BINARY_PATH" "$PKGDIR/opt/aiviania/aiviania"
+    cat > "$PKGDIR/DEBIAN/control" <<EOF
 Package: aiviania
 Version: 0.1.0
 Section: web
@@ -82,8 +88,15 @@ Architecture: amd64
 Maintainer: AIVIANIA <dev@aiviania.example>
 Description: AIVIANIA Rust web framework
 EOF
-  dpkg-deb --build "$PKGDIR" aiviania_0.1.0_amd64.deb
-  echo "Built aiviania_0.1.0_amd64.deb"
+    dpkg-deb --build "$PKGDIR" aiviania_0.1.0_amd64.deb
+    echo "Built aiviania_0.1.0_amd64.deb"
+  fi
+
+  # Optionally build RPM using fpm if available
+  if command -v fpm >/dev/null 2>&1; then
+    echo "Building rpm via fpm"
+    fpm -s dir -t rpm -n aiviania -v 0.1.0 --prefix /opt/aiviania "$BINARY_PATH"
+  fi
 fi
 
 echo "Done."

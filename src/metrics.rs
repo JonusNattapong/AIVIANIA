@@ -17,6 +17,20 @@ pub static ACTIVE_CONNECTIONS: Lazy<Gauge> = Lazy::new(|| {
     g
 });
 
+pub static DB_UP: Lazy<Gauge> = Lazy::new(|| {
+    let opts = Opts::new("aiviania_db_up", "Whether the database is reachable (1 = up, 0 = down)");
+    let g = Gauge::with_opts(opts).unwrap();
+    REGISTRY.register(Box::new(g.clone())).ok();
+    g
+});
+
+pub static DB_SCHEMA_OK: Lazy<Gauge> = Lazy::new(|| {
+    let opts = Opts::new("aiviania_db_schema_ok", "Whether required DB schema/tables exist (1 = ok, 0 = missing)");
+    let g = Gauge::with_opts(opts).unwrap();
+    REGISTRY.register(Box::new(g.clone())).ok();
+    g
+});
+
 pub fn gather_metrics() -> String {
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();

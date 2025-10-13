@@ -226,6 +226,21 @@ impl Database {
         }).await?;
         Ok(res)
     }
+
+    /// Ping and check required schema existence (users table present)
+    pub async fn ping_with_schema_check(&self) -> Result<(bool, bool), Box<dyn std::error::Error + Send + Sync>> {
+        let up = self.ping().await?;
+        let schema_ok = if up {
+            self.conn.call(|conn| {
+                let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")?;
+                let mut rows = stmt.query([])?;
+                Ok(rows.next()?.is_some())
+            }).await?
+        } else {
+            false
+        };
+        Ok((up, schema_ok))
+    }
 }
 
 /// User model.

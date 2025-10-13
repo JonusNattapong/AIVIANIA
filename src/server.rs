@@ -69,21 +69,27 @@ impl AivianiaServer {
                                 let mut details = serde_json::json!({});
                                 if let Some(db_plugin) = plugins.get("db") {
                                     if let Some(db) = db_plugin.as_any().downcast_ref::<crate::database::DatabasePlugin>() {
-                                        match db.db().ping().await {
-                                            Ok(true) => {
-                                                ready = true;
-                                                details["database"] = serde_json::json!({"status": "ok"});
-                                            }
-                                            Ok(false) => {
-                                                details["database"] = serde_json::json!({"status": "no response"});
+                                        match db.db().ping_with_schema_check().await {
+                                            Ok((up, schema_ok)) => {
+                                                if up && schema_ok {
+                                                    ready = true;
+                                                }
+                                                details["database"] = serde_json::json!({"status": if up {"up"} else {"down"}, "schema_ok": schema_ok});
+                                                // set prometheus gauges
+                                                crate::metrics::DB_UP.set(if up {1.0} else {0.0});
+                                                crate::metrics::DB_SCHEMA_OK.set(if schema_ok {1.0} else {0.0});
                                             }
                                             Err(e) => {
                                                 details["database"] = serde_json::json!({"status": "error", "error": format!("{}", e)});
+                                                crate::metrics::DB_UP.set(0.0);
+                                                crate::metrics::DB_SCHEMA_OK.set(0.0);
                                             }
                                         }
                                     }
                                 } else {
                                     details["database"] = serde_json::json!({"status": "missing"});
+                                    crate::metrics::DB_UP.set(0.0);
+                                    crate::metrics::DB_SCHEMA_OK.set(0.0);
                                 }
 
                                 let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
