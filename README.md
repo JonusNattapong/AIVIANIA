@@ -27,6 +27,41 @@ The example server includes:
 - Protected routes: `GET /admin/dashboard` (admin role), `GET /user/profile` (user role)
 - WebSocket at `GET /ws` with broadcasting at `POST /broadcast`
 
+## Docker Deployment
+
+AIVIANIA includes Docker support for easy deployment:
+
+### Build and Run with Docker
+
+```bash
+# Build the Docker image
+docker build -t aiviania .
+
+# Run the container
+docker run -p 3000:3000 -e JWT_SECRET=your-secret-key-here aiviania
+```
+
+### Using Docker Compose
+
+For a complete setup with persistent data:
+
+```bash
+# Start the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+The Docker setup includes:
+- Multi-stage build for optimized image size
+- Environment variable configuration
+- Volume mounting for data persistence
+- Exposed port 3000 for web access
+
 ## Example Usage
 
 ```rust

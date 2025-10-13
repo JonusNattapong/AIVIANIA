@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  aiviania:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=sqlite:./aiviania.db
+      - JWT_SECRET=your-secret-key-here
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Optional: Add a database service if using PostgreSQL/MySQL
+  # postgres:
+  #   image: postgres:15
+  #   environment:
+  #     POSTGRES_DB: aiviania
+  #     POSTGRES_USER: aiviania
+  #     POSTGRES_PASSWORD: password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+volumes:
+  postgres_data:
