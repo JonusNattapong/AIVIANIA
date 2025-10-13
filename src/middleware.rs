@@ -6,7 +6,6 @@ use std::future::Future;
 use std::pin::Pin;
 use hyper::{Request, Response, Body, StatusCode};
 use std::sync::Arc;
-use crate::auth::AuthService;
 use crate::database::Database;
 
 /// Trait for middleware.

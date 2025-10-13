@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let auth_service = Arc::new(AuthService::new("super-secret-key"));
     let db = Arc::new(Database::new().await?);
 
-    router.add_route(Route::new("GET", "/admin/dashboard", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    router.add_route(Route::new("GET", "/admin/dashboard", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
         Response::new(StatusCode::OK).json(&serde_json::json!({
             "message": "Admin Dashboard",
             "data": "This is restricted to admin users only"
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }).with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
       .with_middleware(Box::new(RoleMiddleware::new("admin", db.clone()))));
 
-    router.add_route(Route::new("GET", "/user/profile", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    router.add_route(Route::new("GET", "/user/profile", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
         Response::new(StatusCode::OK).json(&serde_json::json!({
             "message": "User Profile",
             "data": "This is accessible to authenticated users"
@@ -131,9 +131,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Response::new(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("WebSocket plugin not found"))
     }));
 
-    // Create auth service
-    let auth_service = Arc::new(AuthService::new("super-secret-key"));
-
     // Create database
     let db = Arc::new(Database::new().await?);
     
@@ -149,7 +146,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Create server
     let server = AivianiaServer::new(router)
         .with_middleware(Box::new(LoggingMiddleware))
-        .with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
         .with_plugin(Box::new(AIPlugin::new("dummy-api-key".to_string())))
         .with_plugin(Box::new(DatabasePlugin::new(db)))
         .with_plugin(Box::new(WebSocketPlugin::new()))
