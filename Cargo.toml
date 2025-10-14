@@ -54,10 +54,14 @@ async-graphql = { version = "7.0", features = ["chrono", "uuid", "string_number"
 async-graphql-axum = "7.0"
 oauth2 = { version = "4.4", features = ["reqwest"] }
 url = "2.5"
+regex = "1.10"
+serde_urlencoded = "0.7"
 
 [features]
 default = []
 redis = ["dep:redis"]
+cache = ["redis"]
+ai_ml = []
 sqlx = ["dep:sqlx"]
 postgres = ["dep:sqlx", "sqlx/postgres", "dep:tokio-postgres"]
 mysql = ["dep:sqlx", "sqlx/mysql", "dep:mysql_async"]

@@ -14,7 +14,8 @@ pub mod websocket;
 pub mod config;
 pub mod errors;
 pub mod rate_limit;
-pub mod cache;
+#[cfg(feature = "ai_ml")]
+pub mod ai_ml;
 pub mod plugin;
 pub mod blockchain;
 #[cfg(feature = "utoipa")]
@@ -25,6 +26,8 @@ pub mod upload;
 pub mod email;
 pub mod graphql;
 pub mod oauth;
+pub mod security_example;
+pub mod security;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -51,3 +54,4 @@ pub use upload::{UploadManager, UploadConfig, UploadedFile, UploadError, UploadM
 pub use email::{EmailService, EmailConfig, EmailError, EmailVerificationService, PasswordResetService};
 pub use graphql::{GraphQLService, GraphQLConfig, GraphQLSchema, GraphQLContext, GraphQLMiddleware, graphql_handler, graphql_playground};
 pub use oauth::{OAuthService, OAuthConfig, OAuthUser, OAuthTokens, OAuthError, OAuthMiddleware};
+pub use security::{SecurityConfig, CsrfProtection, CorsMiddleware, SecurityHeadersMiddleware, InputValidator, SecurityEventLogger, SecurityMiddlewareStack, SecurityEvent, SecuritySeverity, SecurityError, EventFilter, EventExporter, SecurityMetricsCalculator, SecurityMetrics, SecurityAlertSystem, SecurityAlert};
