@@ -26,7 +26,7 @@ AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It 
 - **GraphQL Support**: Complete GraphQL API with schema definition, resolvers, and interactive playground.
 - **OAuth Integration**: Multi-provider OAuth2 authentication (Google, GitHub, Facebook) with secure token handling.
 - **WebSocket Support**: Real-time bidirectional communication with room-based messaging, user management, and structured JSON protocols.
-- **Database Integration**: SQLite with async operations, user management, and role assignment.
+- **Database Integration**: SQLite with async operations, repository pattern, RBAC integration, and comprehensive CRUD operations.
 - **Blockchain Integration**: Web3 integration for Ethereum and other blockchain networks.
 - **API Documentation**: Automatic OpenAPI/Swagger specification generation with interactive UI.
 - **Metrics & Monitoring**: Prometheus metrics collection and health checks.
@@ -48,6 +48,7 @@ The example server includes:
 - Login at `POST /login`
 - Protected routes: `GET /admin/dashboard` (admin role), `GET /user/profile` (user role)
 - WebSocket at `GET /ws` with broadcasting at `POST /broadcast`
+- Database example: `cargo run --features sqlite --example database_example`
 
 ## Docker Deployment
 
@@ -759,15 +760,158 @@ let rate_limit_middleware = RateLimitMiddleware::new(limiter, "api");
 router.add_middleware(rate_limit_middleware);
 ```
 
-## Database Schema
+## Database Integration
+
+AIVIANIA provides comprehensive database integration with async operations, repository pattern, and RBAC support:
+
+```rust
+use aiviania::database::{DatabaseConfig, DatabaseManager, DatabaseType, Repository};
+use aiviania::database::repositories::UserRepository;
+use aiviania::auth::rbac::RBACService;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure SQLite database
+    let config = DatabaseConfig {
+        database_type: DatabaseType::Sqlite,
+        connection_string: ":memory:".to_string(), // In-memory database
+        max_connections: 5,
+        min_connections: 1,
+        connection_timeout: 30,
+        acquire_timeout: 10,
+        idle_timeout: 300,
+        max_lifetime: 3600,
+    };
+
+    // Create database manager
+    let db_manager = Arc::new(DatabaseManager::new(config).await?);
+
+    // Create repository
+    let user_repo = UserRepository::new(db_manager.clone());
+
+    // Create RBAC service
+    let rbac_service = Arc::new(RBACService::new());
+
+    // Create a test user
+    let test_user = User {
+        id: None,
+        username: "testuser".to_string(),
+        email: "test@example.com".to_string(),
+        password_hash: "hashed_password_here".to_string(),
+        role: "user".to_string(),
+        first_name: Some("Test".to_string()),
+        last_name: Some("User".to_string()),
+        avatar_url: None,
+        is_active: true,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    // Save user (returns user ID)
+    let user_id = user_repo.save(test_user).await?;
+    println!("Created user with ID: {}", user_id);
+
+    // Find user by ID
+    if let Some(user) = user_repo.find_by_id(user_id).await? {
+        println!("Found user: {} ({})", user.username, user.email);
+    }
+
+    // Update user
+    let mut updated_user = user_repo.find_by_id(user_id).await?.unwrap();
+    updated_user.first_name = Some("Updated".to_string());
+    user_repo.update(updated_user).await?;
+
+    // List all users
+    let users = user_repo.find_all().await?;
+    println!("Total users: {}", users.len());
+
+    // Delete user
+    user_repo.delete(user_id).await?;
+    println!("User deleted successfully");
+
+    Ok(())
+}
+```
+
+### Repository Pattern
+
+AIVIANIA implements the repository pattern for clean data access:
+
+```rust
+use aiviania::database::Repository;
+use async_trait::async_trait;
+
+#[async_trait]
+impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserRepository<T> {
+    async fn find_by_id(&self, id: i64) -> Result<Option<User>, DatabaseError> {
+        // Implementation
+    }
+
+    async fn find_all(&self) -> Result<Vec<User>, DatabaseError> {
+        // Implementation
+    }
+
+    async fn save(&self, entity: User) -> Result<i64, DatabaseError> {
+        // Implementation - returns ID
+    }
+
+    async fn update(&self, entity: User) -> Result<(), DatabaseError> {
+        // Implementation
+    }
+
+    async fn delete(&self, id: i64) -> Result<(), DatabaseError> {
+        // Implementation
+    }
+}
+```
+
+### Database Features
+
+- **Multi-backend Support**: SQLite (primary), PostgreSQL, MySQL, MongoDB
+- **Async Operations**: All database operations are async with tokio
+- **Repository Pattern**: Clean separation of data access logic
+- **RBAC Integration**: User roles and permissions stored in database
+- **Migration System**: Schema management with up/down migrations
+- **Connection Pooling**: Configurable connection limits and timeouts
+- **Error Handling**: Comprehensive error types and recovery
+
+### Database Schema
 
 AIVIANIA uses SQLite with the following tables:
 
-- `users`: id, username, password_hash, created_at
-- `roles`: id, name
-- `user_roles`: user_id, role_id
+- `users`: id, username, email, password_hash, role, first_name, last_name, avatar_url, is_active, created_at, updated_at
+- `schema_migrations`: version, description, applied_at (for migration tracking)
 
-Default roles: `admin`, `user`. New users get `user` role automatically.
+### Database Configuration
+
+```rust
+let config = DatabaseConfig {
+    database_type: DatabaseType::Sqlite,
+    connection_string: ":memory:".to_string(), // or "sqlite:app.db"
+    max_connections: 10,
+    min_connections: 1,
+    connection_timeout: 30,
+    acquire_timeout: 10,
+    idle_timeout: 300,
+    max_lifetime: 3600,
+};
+```
+
+### Running Database Example
+
+```bash
+# Run the comprehensive database example
+cargo run --features sqlite --example database_example
+```
+
+This example demonstrates:
+- Database connection setup
+- Schema creation
+- CRUD operations (Create, Read, Update, Delete)
+- Repository pattern usage
+- RBAC integration
+- Error handling
 
 ## Configuration
 
@@ -850,14 +994,20 @@ export AIVIANIA_RATE_LIMIT__REQUESTS_PER_MINUTE=1000
 
 AIVIANIA supports optional features that can be enabled with `--features`:
 
+- `sqlite`: SQLite database support with async operations and repository pattern (enabled by default for database features)
 - `redis`: Redis support for sessions, caching, and job queues
-- `sqlx`: PostgreSQL/MySQL support (alternative to SQLite)
+- `postgres`: PostgreSQL support with SQLx
+- `mysql`: MySQL support with SQLx
+- `mongodb`: MongoDB support
 - `utoipa`: OpenAPI/Swagger API documentation generation
 - `email`: Email integration with SMTP and templates (enabled by default)
 - `graphql`: GraphQL API support with async-graphql (enabled by default)
 - `oauth`: OAuth2 authentication with multiple providers (enabled by default)
 
 ```bash
+# Enable SQLite database support
+cargo build --features sqlite
+
 # Enable Redis support
 cargo build --features redis
 
@@ -865,7 +1015,7 @@ cargo build --features redis
 cargo run --features utoipa --example main
 
 # Enable multiple features
-cargo build --features "redis utoipa email graphql oauth"
+cargo build --features "sqlite redis utoipa email graphql oauth"
 
 # Minimal build (disable optional features)
 cargo build --features ""
@@ -878,6 +1028,9 @@ AIVIANIA includes comprehensive examples:
 ```bash
 # Basic server
 cargo run --example main
+
+# Database integration with SQLite
+cargo run --features sqlite --example database_example
 
 # Session management
 cargo run --example session_example

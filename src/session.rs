@@ -194,11 +194,11 @@ impl SessionStore for RedisSessionStore {
 
 /// Database session store using the framework's database abstraction
 pub struct DatabaseSessionStore {
-    _database: Arc<dyn crate::database::DbBackend>,
+    _database: Arc<dyn crate::database::DatabaseConnection>,
 }
 
 impl DatabaseSessionStore {
-    pub fn new(database: Arc<dyn crate::database::DbBackend>) -> Self {
+    pub fn new(database: Arc<dyn crate::database::DatabaseConnection>) -> Self {
         Self { _database: database }
     }
 }
@@ -208,7 +208,7 @@ impl SessionStore for DatabaseSessionStore {
     async fn store(&self, _session: &SessionData) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // This would require extending the database trait to support sessions
         // For now, we'll implement a basic version that could be extended
-        // In a real implementation, you'd add session table operations to DbBackend
+        // In a real implementation, you'd add session table operations to DatabaseConnection
         Err("Database session store not fully implemented - requires schema changes".into())
     }
 

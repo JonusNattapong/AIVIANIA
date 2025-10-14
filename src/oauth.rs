@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use url::Url;
 use hyper::{Body, Request, Response, StatusCode};
+use crate::database::Database;
 use std::pin::Pin;
 use std::future::Future;
 
@@ -355,14 +356,14 @@ pub enum OAuthError {
 pub struct OAuthMiddleware {
     _oauth_service: Arc<OAuthService>,
     _session_manager: Arc<crate::SessionManager>,
-    _database: Arc<crate::Database>,
+    _database: Arc<Database>,
 }
 
 impl OAuthMiddleware {
     pub fn new(
         oauth_service: Arc<OAuthService>,
         session_manager: Arc<crate::SessionManager>,
-        database: Arc<crate::Database>,
+        database: Arc<Database>,
     ) -> Self {
         Self {
             _oauth_service: oauth_service,

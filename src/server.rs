@@ -7,6 +7,7 @@ use hyper::{Server, service::{make_service_fn, service_fn}, Request, Body};
 use crate::router::Router;
 use crate::middleware::MiddlewareStack;
 use crate::plugin::PluginManager;
+use crate::database::DatabaseConnection;
 use crate::metrics;
 use hyper::{Response as HyperResponse, StatusCode};
 

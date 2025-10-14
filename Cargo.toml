@@ -14,8 +14,13 @@ env_logger = "0.11.8"
 async-trait = "0.1"
 jsonwebtoken = { version = "10.0.0", features = ["rust_crypto"] }
 chrono = { version = "0.4", features = ["serde"] }
-tokio-rusqlite = { version = "0.6.0", features = ["bundled"] }
+tokio-rusqlite = { version = "0.6.0", features = ["bundled"], optional = true }
+rusqlite = { version = "0.32", optional = true }
+tokio-postgres = { version = "0.7", optional = true }
+mysql_async = { version = "0.34", optional = true }
+mongodb = { version = "2.8", optional = true }
 argon2 = { version = "0.5", features = ["std"] }
+rand = "0.8"
 bytes = "1.0"
 http-body-util = "0.1"
 tokio-tungstenite = "0.21"
@@ -54,8 +59,10 @@ url = "2.5"
 default = []
 redis = ["dep:redis"]
 sqlx = ["dep:sqlx"]
-postgres = ["dep:sqlx", "sqlx/postgres"]
-mysql = ["dep:sqlx", "sqlx/mysql"]
+postgres = ["dep:sqlx", "sqlx/postgres", "dep:tokio-postgres"]
+mysql = ["dep:sqlx", "sqlx/mysql", "dep:mysql_async"]
+sqlite = ["dep:tokio-rusqlite", "dep:rusqlite"]
+mongodb = ["dep:mongodb"]
 utoipa = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 
 [dev-dependencies]

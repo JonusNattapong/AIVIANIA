@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::request::AivianiaRequest;
 use crate::response::AivianiaResponse;
+use crate::database::Database;
 
 /// GraphQL configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -196,7 +197,7 @@ pub struct GraphQLContext {
     /// Current user ID (if authenticated)
     pub current_user_id: Option<String>,
     /// Database connection
-    pub database: Arc<crate::Database>,
+    pub database: Arc<Database>,
     /// Session manager
     pub session_manager: Arc<crate::SessionManager>,
 }
@@ -204,7 +205,7 @@ pub struct GraphQLContext {
 impl GraphQLContext {
     pub fn new(
         current_user_id: Option<String>,
-        database: Arc<crate::Database>,
+        database: Arc<Database>,
         session_manager: Arc<crate::SessionManager>,
     ) -> Self {
         Self {
@@ -570,11 +571,11 @@ impl GraphQLService {
 /// GraphQL middleware for authentication and context setup
 pub struct GraphQLMiddleware {
     session_manager: Arc<crate::SessionManager>,
-    database: Arc<crate::Database>,
+    database: Arc<Database>,
 }
 
 impl GraphQLMiddleware {
-    pub fn new(session_manager: Arc<crate::SessionManager>, database: Arc<crate::Database>) -> Self {
+    pub fn new(session_manager: Arc<crate::SessionManager>, database: Arc<Database>) -> Self {
         Self {
             session_manager,
             database,

@@ -1,8 +1,9 @@
-use aiviania::framework::{AivianiaApp, Route};
-use aiviania::websocket::{WebSocketManager, WSMessage, MessageType};
-use aiviania::rate_limit::{RateLimitMiddleware, RateLimitBuilder, KeyStrategy};
-use aiviania::openapi::{OpenApiService, OpenApiConfig};
-use hyper::{Body, Request, Response, StatusCode};
+use aiviania::server::AivianiaServer;
+use aiviania::router::{Route, Router};
+use aiviania::websocket::{WebSocketManager, WSMessage};
+use aiviania::rate_limit::{RateLimitMiddleware, RateLimitConfig, KeyStrategy};
+use aiviania::response::AivianiaResponse;
+use hyper::{Request as HyperRequest, StatusCode, Body};
 use std::sync::Arc;
 use serde_json::json;
 
@@ -12,34 +13,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("🚀 Starting AIVIANIA Integration Demo");
     println!("Features: WebSocket Rooms, Rate Limiting, OpenAPI Documentation");
 
-    // Initialize the application
-    let mut app = AivianiaApp::new();
-
     // Initialize services
     let ws_manager = Arc::new(WebSocketManager::new());
-    let rate_limiter = Arc::new(RateLimitMiddleware::new(
-        RateLimitBuilder::new()
-            .with_capacity(50)
-            .with_refill_rate(10)
-            .with_window_secs(60)
-            .with_key_strategy(KeyStrategy::IpAddress)
-            .build()
-    ));
+    let rate_limiter = RateLimitMiddleware::new(RateLimitConfig {
+        requests_per_window: 50,
+        window_duration: std::time::Duration::from_secs(60),
+        key_strategy: KeyStrategy::IP,
+        use_redis: false,
+    });
 
-    let openapi_config = OpenApiConfig {
-        title: "AIVIANIA Integration Demo API".to_string(),
-        version: "1.0.0".to_string(),
-        description: Some("Demonstration of WebSocket, Rate Limiting, and API Documentation".to_string()),
-        ..Default::default()
-    };
-    let openapi_service = Arc::new(OpenApiService::new(openapi_config));
-
-    // Add middleware
-    app.add_middleware(rate_limiter);
+    // Create router
+    let mut router = Router::new();
 
     // WebSocket routes with room support
-    app.add_route(Route::new("GET", "/ws/:room_id", move |req: Request<Body>| {
-        let ws_manager = ws_manager.clone();
+    let ws_manager_clone = ws_manager.clone();
+    router.add_route(Route::new("GET", "/ws/:room_id", move |req: HyperRequest<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| {
+        let ws_manager = ws_manager_clone.clone();
         async move {
             let path = req.uri().path();
             let room_id = path.split('/').last().unwrap_or("general").to_string();
@@ -49,19 +38,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             match ws_manager.handle_upgrade(req, Some(room_id)).await {
                 Ok(response) => {
                     println!("✅ WebSocket upgrade successful");
-                    response
+                    // Convert HyperResponse to AivianiaResponse
+                    // For WebSocket upgrade, we need to preserve the special headers
+                    let status = response.status();
+                    let mut aiviania_resp = AivianiaResponse::new(status);
+                    
+                    // Copy all headers from the WebSocket response
+                    for (key, value) in response.headers() {
+                        if let Ok(value_str) = value.to_str() {
+                            aiviania_resp = aiviania_resp.header(key.as_str(), value_str);
+                        }
+                    }
+                    
+                    aiviania_resp
                 },
                 Err(e) => {
                     println!("❌ WebSocket upgrade failed: {:?}", e);
-                    Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    AivianiaResponse::new(StatusCode::INTERNAL_SERVER_ERROR)
                 }
             }
         }
     }));
 
     // Room messaging API
-    app.add_route(Route::new("POST", "/api/rooms/:room_id/message", move |req: Request<Body>| {
-        let ws_manager = ws_manager.clone();
+    let ws_manager_clone = ws_manager.clone();
+    router.add_route(Route::new("POST", "/api/rooms/:room_id/message", move |req: HyperRequest<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| {
+        let ws_manager = ws_manager_clone.clone();
         async move {
             let path = req.uri().path();
             let room_id = path.split('/').nth(3).unwrap_or("general").to_string();
@@ -69,27 +71,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Parse JSON body
             let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
                 Ok(bytes) => bytes,
-                Err(_) => return Response::new(StatusCode::BAD_REQUEST),
+                Err(_) => return AivianiaResponse::new(StatusCode::BAD_REQUEST),
             };
 
             let message_data: serde_json::Value = match serde_json::from_slice(&body_bytes) {
                 Ok(data) => data,
-                Err(_) => return Response::new(StatusCode::BAD_REQUEST),
+                Err(_) => return AivianiaResponse::new(StatusCode::BAD_REQUEST),
             };
 
-            let ws_message = WSMessage {
-                message_type: MessageType::Chat,
-                room_id: Some(room_id.clone()),
-                user_id: message_data.get("user_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                content: message_data.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                timestamp: chrono::Utc::now(),
-                metadata: message_data.get("metadata").cloned(),
+            let ws_message = WSMessage::RoomMessage {
+                room: room_id.clone(),
+                message: message_data.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             };
 
-            println!("📤 Broadcasting message to room {}: {}", room_id, ws_message.content);
-            ws_manager.broadcast_to_room(&room_id, &ws_message).await;
+            println!("📤 Broadcasting message to room {}: {:?}", room_id, ws_message);
+            let _ = ws_manager.broadcast_to_room(&room_id, &format!("{:?}", ws_message), None).await;
 
-            Response::new(StatusCode::OK).json(&json!({
+            AivianiaResponse::new(StatusCode::OK).json(&json!({
                 "status": "sent",
                 "room_id": room_id,
                 "message_type": "chat"
@@ -98,8 +96,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }));
 
     // Room information API
-    app.add_route(Route::new("GET", "/api/rooms/:room_id/info", move |req: Request<Body>| {
-        let ws_manager = ws_manager.clone();
+    let ws_manager_clone = ws_manager.clone();
+    router.add_route(Route::new("GET", "/api/rooms/:room_id/info", move |req: HyperRequest<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| {
+        let ws_manager = ws_manager_clone.clone();
         async move {
             let path = req.uri().path();
             let room_id = path.split('/').nth(3).unwrap_or("general").to_string();
@@ -108,69 +107,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             println!("📊 Room {} info requested: {} users", room_id, room_info.user_count);
 
-            Response::new(StatusCode::OK).json(&room_info)
-        }
-    }));
-
-    // API Documentation routes
-    app.add_route(Route::new("GET", "/api-docs/openapi.json", move |req: Request<Body>| {
-        let openapi_service = openapi_service.clone();
-        async move {
-            println!("📄 OpenAPI JSON specification requested");
-
-            let spec = openapi_service.generate_spec().await;
-            Response::new(StatusCode::OK)
+            AivianiaResponse::new(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Body::from(spec))
-        }
-    }));
-
-    app.add_route(Route::new("GET", "/api-docs", move |req: Request<Body>| {
-        let openapi_service = openapi_service.clone();
-        async move {
-            println!("📖 Swagger UI requested");
-
-            let html = openapi_service.generate_swagger_ui("/api-docs/openapi.json");
-            Response::new(StatusCode::OK)
-                .header("content-type", "text/html")
-                .body(Body::from(html))
+                .json(&room_info)
         }
     }));
 
     // Health check endpoint (not rate limited)
-    app.add_route(Route::new("GET", "/health", |req: Request<Body>| async move {
+    router.add_route(Route::new("GET", "/health", |_req: HyperRequest<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| async move {
         println!("💚 Health check requested");
 
-        Response::new(StatusCode::OK).json(&json!({
+        AivianiaResponse::new(StatusCode::OK).json(&json!({
             "status": "healthy",
-            "features": ["websocket", "rate_limiting", "api_docs"],
+            "features": ["websocket", "rate_limiting"],
             "timestamp": chrono::Utc::now().to_rfc3339()
         }))
     }));
 
     // Rate limiting test endpoint
-    app.add_route(Route::new("GET", "/api/test-rate-limit", |req: Request<Body>| async move {
+    router.add_route(Route::new("GET", "/api/test-rate-limit", |_req: HyperRequest<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| async move {
         println!("🛡️ Rate limited endpoint accessed");
 
-        Response::new(StatusCode::OK).json(&json!({
+        AivianiaResponse::new(StatusCode::OK).json(&json!({
             "message": "Request allowed",
             "timestamp": chrono::Utc::now().to_rfc3339()
         }))
     }));
 
     println!("📋 Available endpoints:");
-    println!("  🔌 WebSocket: ws://127.0.0.1:3000/ws/{room_id}");
-    println!("  📤 Send Message: POST /api/rooms/{room_id}/message");
-    println!("  📊 Room Info: GET /api/rooms/{room_id}/info");
-    println!("  📄 OpenAPI JSON: GET /api-docs/openapi.json");
-    println!("  📖 Swagger UI: GET /api-docs");
+    println!("  🔌 WebSocket: ws://127.0.0.1:3000/ws/{{room_id}}");
+    println!("  📤 Send Message: POST /api/rooms/{{room_id}}/message");
+    println!("  📊 Room Info: GET /api/rooms/{{room_id}}/info");
     println!("  💚 Health Check: GET /health");
     println!("  🛡️ Rate Limit Test: GET /api/test-rate-limit");
     println!();
     println!("🚀 Server starting on http://127.0.0.1:3000");
 
+    // Create server with middleware
+    let server = AivianiaServer::new(router)
+        .with_middleware(Box::new(rate_limiter));
+
     // Start the server
-    app.run("127.0.0.1:3000").await?;
+    server.run("127.0.0.1:3000").await?;
 
     Ok(())
 }

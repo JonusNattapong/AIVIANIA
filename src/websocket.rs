@@ -20,11 +20,18 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::WebSocketStream;
 
+/// Room information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RoomInfo {
+    pub room_id: String,
+    pub user_count: usize,
+    pub active_connections: Vec<String>,
+}
+
 /// WebSocket message types
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum WSMessage {
-    /// Join a room
     Join { room: String },
     /// Leave a room
     Leave { room: String },
@@ -388,6 +395,19 @@ impl WebSocketManager {
     /// Get connection count
     pub async fn connection_count(&self) -> usize {
         self.connections.lock().await.len()
+    }
+
+    /// Get room information
+    pub async fn get_room_info(&self, room_id: &str) -> RoomInfo {
+        let rooms = self.rooms.lock().await;
+        let user_count = rooms.get(room_id).map(|members| members.len()).unwrap_or(0);
+        let active_connections = rooms.get(room_id).cloned().unwrap_or_default();
+
+        RoomInfo {
+            room_id: room_id.to_string(),
+            user_count,
+            active_connections,
+        }
     }
 
     /// Get room count

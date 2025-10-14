@@ -6,7 +6,10 @@ use std::future::Future;
 use std::pin::Pin;
 use hyper::{Request, Response, Body, StatusCode};
 use std::sync::Arc;
-use crate::database::Database;
+use crate::database::Repository;
+
+/// Type alias for middleware results
+pub type MiddlewareResult<T> = Result<T, Response<Body>>;
 
 /// Trait for middleware.
 pub trait Middleware: Send + Sync {
@@ -75,14 +78,16 @@ impl Middleware for LoggingMiddleware {
 // Role-based access control middleware
 pub struct RoleMiddleware {
     required_role: String,
-    db: Arc<Database>,
+    user_repo: Arc<crate::database::repositories::UserRepository<crate::database::DatabaseManager>>,
+    rbac_service: Arc<crate::auth::rbac::RBACService>,
 }
 
 impl RoleMiddleware {
-    pub fn new(required_role: &str, db: Arc<Database>) -> Self {
+    pub fn new(required_role: &str, user_repo: Arc<crate::database::repositories::UserRepository<crate::database::DatabaseManager>>, rbac_service: Arc<crate::auth::rbac::RBACService>) -> Self {
         Self {
             required_role: required_role.to_string(),
-            db,
+            user_repo,
+            rbac_service,
         }
     }
 }
@@ -90,12 +95,15 @@ impl RoleMiddleware {
 impl Middleware for RoleMiddleware {
     fn before(&self, req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         let required_role = self.required_role.clone();
-        let db = self.db.clone();
+        let user_repo = self.user_repo.clone();
+        let rbac_service = self.rbac_service.clone();
         Box::pin(async move {
             // Read Claims from request extensions (set by AuthMiddleware)
             if let Some(claims) = req.extensions().get::<crate::auth::Claims>() {
-                if let Ok(Some(user)) = db.get_user(&claims.sub).await {
-                    if let Ok(has) = db.user_has_role(user.id, &required_role).await {
+                if let Ok(user_id) = claims.sub.parse::<i64>() {
+                    if let Ok(Some(user)) = user_repo.find_by_id(user_id).await {
+                        let auth_user = user.to_auth_user();
+                        let has = rbac_service.has_role(&auth_user, &crate::auth::models::Role::Custom(required_role.clone()));
                         if has {
                             return Ok(req);
                         }

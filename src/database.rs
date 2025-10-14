@@ -1,234 +1,583 @@
-//! Database module - adapter-backed database support.
+//! Database Integration module - Comprehensive database support.
 //!
-//! Provides a DbBackend trait and a sqlite implementation. Other adapters (Postgres/sqlx) can be
-//! added behind feature flags.
+//! This module provides enterprise-grade database functionality including:
+//! - Multiple database backends (SQLite, PostgreSQL, MySQL, MongoDB)
+//! - ORM-like functionality with query builders
+//! - Migration system for schema management
+//! - Connection pooling for performance
+//! - Repository pattern for data access
+//! - Transaction support
 
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::SaltString;
-use tokio_rusqlite::Connection as AsyncConnection;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use thiserror::Error;
+#[cfg(feature = "sqlite")]
+use tokio_rusqlite;
 
-/// User model used by database backends.
+// Import backends
+#[cfg(feature = "sqlite")]
+pub mod backends;
+
+pub mod migrations;
+pub mod repositories;
+
+/// Database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub struct User {
-    pub id: i64,
-    pub username: String,
-    pub password_hash: String,
-    pub created_at: String,
+pub struct DatabaseConfig {
+    pub database_type: DatabaseType,
+    pub connection_string: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub connection_timeout: u64,
+    pub acquire_timeout: u64,
+    pub idle_timeout: u64,
+    pub max_lifetime: u64,
 }
 
-/// DbBackend trait declares required database operations.
+/// Supported database types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DatabaseType {
+    Sqlite,
+    PostgreSQL,
+    MySQL,
+    MongoDB,
+}
+
+/// Query result types
+#[derive(Debug)]
+pub enum QueryResult {
+    Execute(u64),
+    Query(Vec<HashMap<String, serde_json::Value>>),
+    QueryOne(Option<HashMap<String, serde_json::Value>>),
+}
+
+/// Database connection trait
 #[async_trait]
-pub trait DbBackend: Send + Sync {
-    async fn create_user(&self, username: &str, password_hash: &str) -> Result<i64, Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_user(&self, username: &str) -> Result<Option<User>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn verify_credentials(&self, username: &str, password: &str) -> Result<Option<User>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn create_default_roles(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    async fn assign_role_to_user(&self, user_id: i64, role_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_user_roles(&self, user_id: i64) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn user_has_role(&self, user_id: i64, role_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
-    async fn ping(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
-    async fn ping_with_schema_check(&self) -> Result<(bool,bool), Box<dyn std::error::Error + Send + Sync>>;
+pub trait DatabaseConnection: Send + Sync {
+    /// Execute a raw query
+    async fn execute(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+
+    /// Execute a query and return rows
+    async fn query(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+
+    /// Execute a query and return the first row
+    async fn query_one(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+
+    /// Check if connection is healthy
+    async fn ping(&self) -> Result<bool, DatabaseError>;
+
+    /// Close the connection
+    async fn close(&self) -> Result<(), DatabaseError>;
 }
 
-/// Password helper functions
-pub fn hash_password(password: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
-    let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
-    Ok(password_hash.to_string())
+/// Transaction trait for ACID operations
+#[async_trait]
+pub trait Transaction: Send + Sync {
+    /// Execute query within transaction
+    async fn execute(&mut self, query: &str, params: Vec<serde_json::Value>) -> Result<u64, DatabaseError>;
+
+    /// Query within transaction
+    async fn query(&mut self, query: &str, params: Vec<serde_json::Value>) -> Result<Vec<HashMap<String, serde_json::Value>>, DatabaseError>;
+
+    /// Commit the transaction
+    async fn commit(self: Box<Self>) -> Result<(), DatabaseError>;
+
+    /// Rollback the transaction
+    async fn rollback(self: Box<Self>) -> Result<(), DatabaseError>;
 }
 
-pub fn verify_password(password: &str, hash: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let parsed_hash = PasswordHash::new(hash)?;
-    let argon2 = Argon2::default();
-    Ok(argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok())
+/// Migration trait for schema management
+pub trait Migration: Send + Sync {
+    /// Get migration version
+    fn version(&self) -> i64;
+
+    /// Get migration description
+    fn description(&self) -> &'static str;
+
+    /// Apply the migration (up)
+    fn up<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
+
+    /// Rollback the migration (down)
+    fn down<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
 }
 
-/// Database plugin wrapper that stores a dynamic backend.
+/// Database errors
+#[derive(Error, Debug)]
+pub enum DatabaseError {
+    #[error("Connection error: {0}")]
+    ConnectionError(String),
+
+    #[error("Query error: {0}")]
+    QueryError(String),
+
+    #[error("Transaction error: {0}")]
+    TransactionError(String),
+
+    #[error("Migration error: {0}")]
+    MigrationError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("Not found")]
+    NotFound,
+
+    #[error("Duplicate entry")]
+    DuplicateEntry,
+
+    #[error("Constraint violation: {0}")]
+    ConstraintViolation(String),
+}
+
+// Implement From conversions for error types used in sqlite backend
+#[cfg(feature = "sqlite")]
+impl From<tokio_rusqlite::Error> for DatabaseError {
+    fn from(e: tokio_rusqlite::Error) -> Self {
+        DatabaseError::QueryError(e.to_string())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for DatabaseError {
+    fn from(e: std::string::FromUtf8Error) -> Self {
+        DatabaseError::QueryError(e.to_string())
+    }
+}
+
+/// Database manager - main entry point for database operations
+pub struct DatabaseManager {
+    connection: Arc<dyn DatabaseConnection>,
+    migrations: Vec<Box<dyn Migration>>,
+}
+
+impl DatabaseManager {
+    /// Create a new database manager
+    pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
+        let connection = Self::create_connection(config).await?;
+        Ok(Self {
+            connection,
+            migrations: Vec::new(),
+        })
+    }
+
+    /// Create database connection based on type
+    async fn create_connection(config: DatabaseConfig) -> Result<Arc<dyn DatabaseConnection>, DatabaseError> {
+        match config.database_type {
+            DatabaseType::Sqlite => {
+                #[cfg(feature = "sqlite")]
+                {
+                    use crate::database::backends::sqlite::SqliteConnection;
+                    Ok(Arc::new(SqliteConnection::new(&config.connection_string).await?))
+                }
+                #[cfg(not(feature = "sqlite"))]
+                {
+                    Err(DatabaseError::ConfigError("SQLite support not enabled. Enable with --features sqlite".to_string()))
+                }
+            }
+            DatabaseType::PostgreSQL => {
+                #[cfg(feature = "postgres")]
+                {
+                    use crate::database::backends::postgres::PostgresConnection;
+                    PostgresConnection::new(&config.connection_string).await
+                }
+                #[cfg(not(feature = "postgres"))]
+                {
+                    Err(DatabaseError::ConfigError("PostgreSQL support not enabled. Enable with --features postgres".to_string()))
+                }
+            }
+            DatabaseType::MySQL => {
+                #[cfg(feature = "mysql")]
+                {
+                    use crate::database::backends::mysql::MysqlConnection;
+                    MysqlConnection::new(&config.connection_string).await
+                }
+                #[cfg(not(feature = "mysql"))]
+                {
+                    Err(DatabaseError::ConfigError("MySQL support not enabled. Enable with --features mysql".to_string()))
+                }
+            }
+            DatabaseType::MongoDB => {
+                #[cfg(feature = "mongodb")]
+                {
+                    use crate::database::backends::mongo::MongoConnection;
+                    // For MongoDB, we need to extract database name from connection string
+                    // This is a simplified approach - in production you'd want proper parsing
+                    let database_name = "default_db"; // TODO: Parse from connection string
+                    MongoConnection::new(&config.connection_string, database_name).await
+                }
+                #[cfg(not(feature = "mongodb"))]
+                {
+                    Err(DatabaseError::ConfigError("MongoDB support not enabled. Enable with --features mongodb".to_string()))
+                }
+            }
+        }
+    }
+
+    /// Get database connection
+    pub fn connection(&self) -> &Arc<dyn DatabaseConnection> {
+        &self.connection
+    }
+
+    /// Add a migration
+    pub fn add_migration(&mut self, migration: Box<dyn Migration>) {
+        self.migrations.push(migration);
+        self.migrations.sort_by_key(|m| m.version());
+    }
+
+    /// Run all pending migrations
+    pub async fn run_migrations(&self) -> Result<(), DatabaseError> {
+        // Create migrations table if it doesn't exist
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version BIGINT PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            vec![]
+        ).await?;
+
+        // Get applied migrations
+        let applied_result = self.connection.query(
+            "SELECT version FROM schema_migrations ORDER BY version",
+            vec![]
+        ).await?;
+
+        let applied_versions: std::collections::HashSet<i64> = match applied_result {
+            QueryResult::Query(rows) => rows.into_iter()
+                .filter_map(|row| row.get("version").and_then(|v| v.as_i64()))
+                .collect(),
+            _ => std::collections::HashSet::new(),
+        };
+
+        // Apply pending migrations
+        for migration in &self.migrations {
+            if !applied_versions.contains(&migration.version()) {
+                println!("Applying migration {}: {}", migration.version(), migration.description());
+                migration.up(self.connection.as_ref()).await?;
+
+                // Record migration as applied
+                self.connection.execute(
+                    "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
+                    vec![
+                        serde_json::Value::Number(migration.version().into()),
+                        serde_json::Value::String(migration.description().to_string())
+                    ]
+                ).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Rollback migrations
+    pub async fn rollback_migrations(&self, steps: usize) -> Result<(), DatabaseError> {
+        // Get applied migrations in reverse order
+        let applied_result = self.connection.query(
+            "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT ?",
+            vec![serde_json::Value::Number((steps as i64).into())]
+        ).await?;
+
+        let applied_rows = match applied_result {
+            QueryResult::Query(rows) => rows,
+            _ => Vec::new(),
+        };
+
+        for row in applied_rows {
+            if let Some(serde_json::Value::Number(version)) = row.get("version") {
+                if let Some(version_i64) = version.as_i64() {
+                    // Find and rollback migration
+                    for migration in &self.migrations {
+                        if migration.version() == version_i64 {
+                            println!("Rolling back migration {}: {}", version_i64, migration.description());
+                            migration.down(self.connection.as_ref()).await?;
+
+                            // Remove from migrations table
+                            self.connection.execute(
+                                "DELETE FROM schema_migrations WHERE version = ?",
+                                vec![serde_json::Value::Number(version_i64.into())]
+                            ).await?;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Health check
+    pub async fn health_check(&self) -> Result<DatabaseHealth, DatabaseError> {
+        let start = std::time::Instant::now();
+        self.connection.ping().await?;
+        let response_time = start.elapsed();
+
+        // Get basic stats
+        let stats = match self.connection.query("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'", vec![]).await {
+            Ok(QueryResult::Query(rows)) => {
+                if let Some(row) = rows.first() {
+                    if let Some(serde_json::Value::Number(count)) = row.get("count") {
+                        count.as_u64().unwrap_or(0)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        };
+
+        Ok(DatabaseHealth {
+            status: "healthy".to_string(),
+            response_time_ms: response_time.as_millis() as u64,
+            tables_count: stats,
+        })
+    }
+
+    /// Ping with schema check - returns (is_up, schema_ok)
+    pub async fn ping_with_schema_check(&self) -> Result<(bool, bool), DatabaseError> {
+        // First check if connection is up
+        let is_up = self.connection.ping().await.is_ok();
+
+        // Then check if schema exists (basic check for schema_migrations table)
+        let schema_ok = if is_up {
+            match self.connection.query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
+                vec![]
+            ).await {
+                Ok(QueryResult::Query(rows)) => !rows.is_empty(),
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        Ok((is_up, schema_ok))
+    }
+}
+
+#[async_trait]
+impl DatabaseConnection for DatabaseManager {
+    async fn execute(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+        self.connection.execute(query, params).await
+    }
+
+    async fn query(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+        self.connection.query(query, params).await
+    }
+
+    async fn query_one(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+        self.connection.query_one(query, params).await
+    }
+
+    async fn ping(&self) -> Result<bool, DatabaseError> {
+        self.connection.ping().await
+    }
+
+    async fn close(&self) -> Result<(), DatabaseError> {
+        self.connection.close().await
+    }
+}
+
+/// Database health information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatabaseHealth {
+    pub status: String,
+    pub response_time_ms: u64,
+    pub tables_count: u64,
+}
+
+/// Query builder for type-safe database operations
+pub struct QueryBuilder {
+    table: String,
+    select_fields: Vec<String>,
+    where_conditions: Vec<String>,
+    where_params: Vec<serde_json::Value>,
+    order_by: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+impl QueryBuilder {
+    /// Create a new query builder for a table
+    pub fn new(table: &str) -> Self {
+        Self {
+            table: table.to_string(),
+            select_fields: vec!["*".to_string()],
+            where_conditions: Vec::new(),
+            where_params: Vec::new(),
+            order_by: None,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    /// Select specific fields
+    pub fn select(mut self, fields: Vec<&str>) -> Self {
+        self.select_fields = fields.into_iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Add WHERE condition
+    pub fn where_eq(mut self, field: &str, value: serde_json::Value) -> Self {
+        self.where_conditions.push(format!("{} = ?", field));
+        self.where_params.push(value);
+        self
+    }
+
+    /// Add WHERE condition with custom operator
+    pub fn where_condition(mut self, condition: &str, param: serde_json::Value) -> Self {
+        self.where_conditions.push(condition.to_string());
+        self.where_params.push(param);
+        self
+    }
+
+    /// Add ORDER BY clause
+    pub fn order_by(mut self, field: &str, ascending: bool) -> Self {
+        let direction = if ascending { "ASC" } else { "DESC" };
+        self.order_by = Some(format!("{} {}", field, direction));
+        self
+    }
+
+    /// Add LIMIT clause
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Add OFFSET clause
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// Build the SELECT query
+    pub fn build_select(&self) -> (String, Vec<serde_json::Value>) {
+        let fields = self.select_fields.join(", ");
+        let mut query = format!("SELECT {} FROM {}", fields, self.table);
+
+        if !self.where_conditions.is_empty() {
+            query.push_str(&format!(" WHERE {}", self.where_conditions.join(" AND ")));
+        }
+
+        if let Some(order_by) = &self.order_by {
+            query.push_str(&format!(" ORDER BY {}", order_by));
+        }
+
+        if let Some(limit) = self.limit {
+            query.push_str(&format!(" LIMIT {}", limit));
+        }
+
+        if let Some(offset) = self.offset {
+            query.push_str(&format!(" OFFSET {}", offset));
+        }
+
+        (query, self.where_params.clone())
+    }
+
+    /// Build INSERT query
+    pub fn build_insert(&self, data: HashMap<&str, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
+        let columns: Vec<String> = data.keys().map(|k| k.to_string()).collect();
+        let placeholders: Vec<String> = (0..data.len()).map(|_| "?".to_string()).collect();
+        let values: Vec<serde_json::Value> = data.values().cloned().collect();
+
+        let query = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            self.table,
+            columns.join(", "),
+            placeholders.join(", ")
+        );
+
+        (query, values)
+    }
+
+    /// Build UPDATE query
+    pub fn build_update(&self, data: HashMap<&str, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
+        let set_clause: Vec<String> = data.keys().map(|k| format!("{} = ?", k)).collect();
+        let mut values: Vec<serde_json::Value> = data.values().cloned().collect();
+
+        let mut query = format!("UPDATE {} SET {}", self.table, set_clause.join(", "));
+
+        if !self.where_conditions.is_empty() {
+            query.push_str(&format!(" WHERE {}", self.where_conditions.join(" AND ")));
+            values.extend(self.where_params.clone());
+        }
+
+        (query, values)
+    }
+
+    /// Build DELETE query
+    pub fn build_delete(&self) -> (String, Vec<serde_json::Value>) {
+        let mut query = format!("DELETE FROM {}", self.table);
+
+        if !self.where_conditions.is_empty() {
+            query.push_str(&format!(" WHERE {}", self.where_conditions.join(" AND ")));
+        }
+
+        (query, self.where_params.clone())
+    }
+}
+
+/// Repository pattern for data access
+#[async_trait]
+pub trait Repository<T, ID>: Send + Sync {
+    /// Find entity by ID
+    async fn find_by_id(&self, id: ID) -> Result<Option<T>, DatabaseError>;
+
+    /// Find all entities
+    async fn find_all(&self) -> Result<Vec<T>, DatabaseError>;
+
+    /// Save entity
+    async fn save(&self, entity: T) -> Result<ID, DatabaseError>;
+
+    /// Update entity
+    async fn update(&self, entity: T) -> Result<(), DatabaseError>;
+
+    /// Delete entity by ID
+    async fn delete_by_id(&self, id: ID) -> Result<(), DatabaseError>;
+
+    /// Check if entity exists by ID
+    async fn exists_by_id(&self, id: ID) -> Result<bool, DatabaseError>;
+
+    /// Count all entities
+    async fn count(&self) -> Result<u64, DatabaseError>;
+}
+
+/// Type alias for database manager
+pub type Database = DatabaseManager;
+
+/// Database plugin for the plugin system
 pub struct DatabasePlugin {
-    db: Arc<dyn DbBackend>,
+    database: Arc<DatabaseManager>,
 }
 
 impl DatabasePlugin {
-    pub fn new(db: Arc<dyn DbBackend>) -> Self { Self { db } }
-    pub fn db(&self) -> &Arc<dyn DbBackend> { &self.db }
+    /// Create a new database plugin
+    pub fn new(database: Arc<DatabaseManager>) -> Self {
+        Self { database }
+    }
+
+    /// Get database reference
+    pub fn database(&self) -> &Arc<DatabaseManager> {
+        &self.database
+    }
 }
 
 impl crate::plugin::Plugin for DatabasePlugin {
-    fn name(&self) -> &'static str { "db" }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn init(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>> {
-        Box::pin(async { Ok(()) })
+    fn name(&self) -> &'static str {
+        "database"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
-/// Sqlite backend implementation
-pub mod sqlite {
-    use super::*;
-
-    pub struct SqliteBackend {
-        conn: Arc<AsyncConnection>,
-    }
-
-    impl SqliteBackend {
-        pub async fn new_in_memory() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-            let conn = AsyncConnection::open_in_memory().await?;
-            let backend = Self { conn: Arc::new(conn) };
-            backend.init_tables().await?;
-            Ok(backend)
-        }
-
-        async fn init_tables(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            self.conn.call(|conn| {
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-                    [],
-                )?;
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-                    [],
-                )?;
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS user_roles (user_id INTEGER NOT NULL, role_id INTEGER NOT NULL, assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, role_id))",
-                    [],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-
-        pub fn conn(&self) -> &Arc<AsyncConnection> { &self.conn }
-    }
-
-    #[async_trait]
-    impl super::DbBackend for SqliteBackend {
-        async fn create_user(&self, username: &str, password_hash: &str) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
-            let username = username.to_string();
-            let password_hash = password_hash.to_string();
-            let id = self.conn.call(move |conn| {
-                conn.execute("INSERT INTO users (username, password_hash) VALUES (?1, ?2)", [&username, &password_hash])?;
-                Ok(conn.last_insert_rowid())
-            }).await?;
-            Ok(id)
-        }
-
-        async fn get_user(&self, username: &str) -> Result<Option<User>, Box<dyn std::error::Error + Send + Sync>> {
-            let username = username.to_string();
-            let user = self.conn.call(move |conn| {
-                let mut stmt = conn.prepare("SELECT id, username, password_hash, created_at FROM users WHERE username = ?1")?;
-                let mut rows = stmt.query_map([&username], |row| {
-                    Ok(User { id: row.get(0)?, username: row.get(1)?, password_hash: row.get(2)?, created_at: row.get(3)? })
-                })?;
-                if let Some(u) = rows.next() { Ok(Some(u?)) } else { Ok(None) }
-            }).await?;
-            Ok(user)
-        }
-
-        async fn verify_credentials(&self, username: &str, password: &str) -> Result<Option<User>, Box<dyn std::error::Error + Send + Sync>> {
-            if let Some(user) = self.get_user(username).await? {
-                if super::verify_password(password, &user.password_hash)? { Ok(Some(user)) } else { Ok(None) }
-            } else { Ok(None) }
-        }
-
-        async fn create_default_roles(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            let roles = vec![ ("admin","Administrator with full access"), ("user","Regular user with basic access"), ("moderator","Moderator with elevated permissions") ];
-            for (name, description) in roles {
-                let name = name.to_string(); let description = description.to_string();
-                self.conn.call(move |conn| {
-                    conn.execute("INSERT OR IGNORE INTO roles (name, description) VALUES (?1, ?2)", [name, description])?;
-                    Ok(())
-                }).await?;
-            }
-            Ok(())
-        }
-
-        async fn assign_role_to_user(&self, user_id: i64, role_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            let role_name = role_name.to_string();
-            self.conn.call(move |conn| {
-                conn.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) SELECT ?1, id FROM roles WHERE name = ?2", (user_id, role_name))?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-
-        async fn get_user_roles(&self, user_id: i64) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-            let roles = self.conn.call(move |conn| {
-                let mut stmt = conn.prepare("SELECT r.name FROM roles r INNER JOIN user_roles ur ON r.id = ur.role_id WHERE ur.user_id = ?1")?;
-                let roles = stmt.query_map([user_id], |row| row.get(0))?.collect::<Result<Vec<String>, _>>()?;
-                Ok(roles)
-            }).await?;
-            Ok(roles)
-        }
-
-        async fn user_has_role(&self, user_id: i64, role_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-            let role_name = role_name.to_string();
-            let count = self.conn.call(move |conn| {
-                let mut stmt = conn.prepare("SELECT COUNT(*) FROM user_roles ur INNER JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = ?1 AND r.name = ?2")?;
-                let count: i64 = stmt.query_row((user_id, role_name), |row| row.get(0))?;
-                Ok(count)
-            }).await?;
-            Ok(count > 0)
-        }
-
-        async fn ping(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-            let res = self.conn.call(|conn| {
-                let mut stmt = conn.prepare("SELECT 1")?;
-                let mut rows = stmt.query([])?;
-                Ok(rows.next()?.is_some())
-            }).await?;
-            Ok(res)
-        }
-
-        async fn ping_with_schema_check(&self) -> Result<(bool, bool), Box<dyn std::error::Error + Send + Sync>> {
-            let up = self.ping().await?;
-            let schema_ok = if up {
-                self.conn.call(|conn| {
-                    let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")?;
-                    let mut rows = stmt.query([])?;
-                    Ok(rows.next()?.is_some())
-                }).await?
-            } else { false };
-            Ok((up, schema_ok))
-        }
-    }
-
-    pub async fn in_memory_backend() -> Result<Arc<dyn super::DbBackend>, Box<dyn std::error::Error + Send + Sync>> {
-        let b = SqliteBackend::new_in_memory().await?;
-        Ok(Arc::new(b))
-    }
-}
-
-/// Database struct that wraps a backend.
-pub struct Database {
-    backend: Arc<dyn DbBackend>,
-}
-
-impl Database {
-    pub fn new(backend: Arc<dyn DbBackend>) -> Self {
-        Self { backend }
-    }
-
-    pub fn backend(&self) -> &Arc<dyn DbBackend> {
-        &self.backend
-    }
-
-    pub fn hash_password(password: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        hash_password(password)
-    }
-
-    pub fn verify_password(password: &str, hash: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        verify_password(password, hash)
-    }
-
-    pub async fn get_user(&self, username: &str) -> Result<Option<User>, Box<dyn std::error::Error + Send + Sync>> {
-        self.backend.get_user(username).await
-    }
-
-    pub async fn user_has_role(&self, user_id: i64, role_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        self.backend.user_has_role(user_id, role_name).await
+impl DatabasePlugin {
+    /// Get reference to the database manager
+    pub fn db(&self) -> &Arc<DatabaseManager> {
+        &self.database
     }
 }
