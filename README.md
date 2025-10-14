@@ -11,7 +11,7 @@
   <a href="https://github.com/JonusNattapong/AIVIANIA/blob/main/LICENSE"><img src="https://img.shields.io/github/license/JonusNattapong/AIVIANIA.svg" alt="License"></a>
 </p>
 
-AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It provides routing, middleware support, JWT authentication, RBAC (Role-Based Access Control), WebSocket real-time communication, SQLite persistence, session management, background job processing, and a plugin system for extensibility, with a focus on enterprise-ready applications.
+AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It provides routing, middleware support, JWT authentication, RBAC (Role-Based Access Control), advanced WebSocket real-time communication with room-based messaging, comprehensive rate limiting, automatic API documentation, SQLite persistence, session management, background job processing, and a plugin system for extensibility, with a focus on enterprise-ready applications.
 
 ## Features
 
@@ -21,7 +21,11 @@ AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It 
 - **Role-Based Access Control (RBAC)**: User roles and permissions with database-backed checks.
 - **Session Management**: Configurable session storage (memory, Redis, database) with secure cookie handling.
 - **Background Jobs/Queues**: Asynchronous job processing with Redis-backed queues and worker management.
-- **WebSocket Support**: Real-time bidirectional communication with broadcasting and subprotocol negotiation.
+- **File Upload Support**: Multipart form data handling with configurable size limits, type validation, and storage management.
+- **Email Integration**: SMTP email sending with templates, verification, and password reset functionality.
+- **GraphQL Support**: Complete GraphQL API with schema definition, resolvers, and interactive playground.
+- **OAuth Integration**: Multi-provider OAuth2 authentication (Google, GitHub, Facebook) with secure token handling.
+- **WebSocket Support**: Real-time bidirectional communication with room-based messaging, user management, and structured JSON protocols.
 - **Database Integration**: SQLite with async operations, user management, and role assignment.
 - **Blockchain Integration**: Web3 integration for Ethereum and other blockchain networks.
 - **API Documentation**: Automatic OpenAPI/Swagger specification generation with interactive UI.
@@ -149,14 +153,22 @@ RBAC middleware checks user roles from the database and returns 403 Forbidden if
 
 ## WebSocket Usage
 
-AIVIANIA supports WebSocket connections with subprotocol negotiation and compression:
+AIVIANIA supports advanced WebSocket connections with room-based messaging, user management, and structured JSON protocols:
 
 ```rust
-// WebSocket upgrade route
-router.add_route(Route::new("GET", "/ws", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+use aiviania::websocket::{WebSocketManager, WSMessage, MessageType};
+use std::sync::Arc;
+
+// Create WebSocket manager
+let ws_manager = Arc::new(WebSocketManager::new());
+
+// WebSocket upgrade route with room support
+router.add_route(Route::new("GET", "/ws/:room_id", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    let room_id = req.uri().path().split('/').last().unwrap_or("default").to_string();
+    
     if let Some(ws_plugin) = plugins.get("websocket") {
-        if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketPlugin>() {
-            match ws_handler.handler().handle_upgrade(req).await {
+        if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketManager>() {
+            match ws_handler.handle_upgrade(req, Some(room_id)).await {
                 Ok(response) => return response,
                 Err(_) => return Response::new(StatusCode::INTERNAL_SERVER_ERROR),
             }
@@ -165,22 +177,226 @@ router.add_route(Route::new("GET", "/ws", |req: Request<Body>, plugins: Arc<Plug
     Response::new(StatusCode::INTERNAL_SERVER_ERROR)
 }));
 
-// Broadcast to all connected clients
-router.add_route(Route::new("POST", "/broadcast", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
-    // Parse message and broadcast
+// Send message to specific room
+router.add_route(Route::new("POST", "/rooms/:room_id/message", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    let room_id = req.uri().path().split('/').nth(2).unwrap_or("default").to_string();
+    
+    // Parse message from request body
+    let message_data: serde_json::Value = serde_json::from_slice(req.body().as_ref())?;
+    
     if let Some(ws_plugin) = plugins.get("websocket") {
-        if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketPlugin>() {
-            ws_handler.handler().broadcast("Hello, WebSocket clients!");
+        if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketManager>() {
+            let ws_message = WSMessage {
+                message_type: MessageType::Chat,
+                room_id: Some(room_id),
+                user_id: Some("user123".to_string()),
+                content: message_data["content"].as_str().unwrap_or("").to_string(),
+                timestamp: chrono::Utc::now(),
+                metadata: None,
+            };
+            
+            ws_handler.broadcast_to_room(&ws_message.room_id.as_ref().unwrap(), &ws_message).await;
         }
     }
-    Response::new(StatusCode::OK).json(&serde_json::json!({"status": "broadcasted"}))
+    
+    Response::new(StatusCode::OK).json(&serde_json::json!({"status": "sent"}))
+}));
+
+// Get room information
+router.add_route(Route::new("GET", "/rooms/:room_id/info", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    let room_id = req.uri().path().split('/').nth(2).unwrap_or("default").to_string();
+    
+    if let Some(ws_plugin) = plugins.get("websocket") {
+        if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketManager>() {
+            let room_info = ws_handler.get_room_info(&room_id).await;
+            return Response::new(StatusCode::OK).json(&room_info);
+        }
+    }
+    
+    Response::new(StatusCode::INTERNAL_SERVER_ERROR)
 }));
 ```
 
-Connect via WebSocket client (e.g., websocat):
+### WebSocket Message Types
+
+AIVIANIA supports structured messaging with the following message types:
+
+- **Chat**: General chat messages
+- **Join**: User joining a room
+- **Leave**: User leaving a room  
+- **System**: System notifications
+- **Private**: Direct messages between users
+- **Custom**: Application-specific messages
+
+### Room Management
+
+- **Room-based messaging**: Messages are scoped to specific rooms
+- **User tracking**: Track connected users per room
+- **Connection monitoring**: Automatic cleanup of disconnected users
+- **Broadcast capabilities**: Send to entire room or specific users
+
+Connect via WebSocket client:
 
 ```bash
-websocat ws://127.0.0.1:3000/ws
+# Connect to default room
+websocat ws://127.0.0.1:3000/ws/default
+
+# Send structured JSON message
+echo '{"type": "chat", "content": "Hello Room!", "user_id": "user123"}' | websocat ws://127.0.0.1:3000/ws/default
+```
+
+## Rate Limiting
+
+AIVIANIA provides comprehensive rate limiting middleware to protect your APIs from abuse:
+
+```rust
+use aiviania::rate_limit::{RateLimitMiddleware, RateLimitBuilder, KeyStrategy};
+use std::sync::Arc;
+
+// Create rate limiter with IP-based limiting
+let rate_limiter = Arc::new(RateLimitMiddleware::new(
+    RateLimitBuilder::new()
+        .with_capacity(100)  // 100 requests
+        .with_refill_rate(10)  // 10 requests per second
+        .with_window_secs(60)  // 1 minute window
+        .with_key_strategy(KeyStrategy::IpAddress)
+        .build()
+));
+
+// Add to router
+router.add_middleware(rate_limiter);
+
+// Or use user-based limiting with Redis backend
+let user_rate_limiter = Arc::new(RateLimitMiddleware::new(
+    RateLimitBuilder::new()
+        .with_capacity(1000)
+        .with_refill_rate(50)
+        .with_window_secs(3600)  // 1 hour window
+        .with_key_strategy(KeyStrategy::UserId)
+        .with_redis_backend("redis://127.0.0.1:6379")
+        .build()
+));
+
+router.add_middleware(user_rate_limiter);
+```
+
+### Rate Limiting Strategies
+
+- **IP Address**: Rate limit by client IP address
+- **User ID**: Rate limit by authenticated user ID
+- **Custom**: Implement custom key extraction logic
+- **Endpoint-specific**: Different limits per route
+
+### Rate Limiting Backends
+
+- **In-Memory**: Fast, suitable for single-instance deployments
+- **Redis**: Distributed rate limiting for multi-instance deployments
+- **Database**: Persistent rate limiting with SQL databases
+
+### Rate Limiting Configuration
+
+```rust
+// Configure different limits for different endpoints
+let api_limiter = RateLimitBuilder::new()
+    .with_capacity(100)
+    .with_refill_rate(20)
+    .with_burst_allowance(10)
+    .with_key_strategy(KeyStrategy::IpAddress)
+    .build();
+
+// Apply to specific routes
+router.add_route_with_middleware(
+    Route::new("GET", "/api/*", api_handler),
+    vec![Arc::new(RateLimitMiddleware::new(api_limiter))]
+);
+```
+
+## API Documentation
+
+AIVIANIA automatically generates OpenAPI/Swagger documentation for your APIs:
+
+```rust
+use aiviania::openapi::{OpenApiService, OpenApiConfig};
+use std::sync::Arc;
+
+// Create OpenAPI service
+let openapi_config = OpenApiConfig {
+    title: "AIVIANIA API".to_string(),
+    version: "1.0.0".to_string(),
+    description: Some("Enterprise Web Framework API".to_string()),
+    ..Default::default()
+};
+
+let openapi_service = Arc::new(OpenApiService::new(openapi_config));
+
+// Add OpenAPI routes
+router.add_route(Route::new("GET", "/api-docs/openapi.json", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    if let Some(openapi_plugin) = plugins.get("openapi") {
+        if let Some(openapi_svc) = openapi_plugin.as_any().downcast_ref::<OpenApiService>() {
+            let spec = openapi_svc.generate_spec().await;
+            return Response::new(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(Body::from(spec));
+        }
+    }
+    Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+}));
+
+// Serve Swagger UI
+router.add_route(Route::new("GET", "/api-docs", |req: Request<Body>, plugins: Arc<PluginManager>| async move {
+    if let Some(openapi_plugin) = plugins.get("openapi") {
+        if let Some(openapi_svc) = openapi_plugin.as_any().downcast_ref::<OpenApiService>() {
+            let html = openapi_svc.generate_swagger_ui("/api-docs/openapi.json");
+            return Response::new(StatusCode::OK)
+                .header("content-type", "text/html")
+                .body(Body::from(html));
+        }
+    }
+    Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+}));
+```
+
+### OpenAPI Features
+
+- **Automatic generation**: Generate specs from your route definitions
+- **Swagger UI**: Interactive API documentation
+- **Schema validation**: JSON Schema validation for requests/responses
+- **Authentication**: JWT Bearer token support in docs
+- **Examples**: Request/response examples in documentation
+
+### Documenting Your APIs
+
+```rust
+use utoipa::ToSchema;
+
+// Define schemas for your data models
+#[derive(ToSchema)]
+struct User {
+    id: i64,
+    name: String,
+    email: String,
+}
+
+// Document your routes
+#[utoipa::path(
+    get,
+    path = "/users/{id}",
+    responses(
+        (status = 200, description = "User found", body = User),
+        (status = 404, description = "User not found")
+    ),
+    params(
+        ("id" = i64, Path, description = "User ID")
+    )
+)]
+async fn get_user(req: AivianiaRequest) -> AivianiaResponse {
+    // Your handler logic
+    Response::new(StatusCode::OK).json(&User {
+        id: 1,
+        name: "John Doe".to_string(),
+        email: "john@example.com".to_string(),
+    })
+}
 ```
 
 ## Session Management
@@ -252,6 +468,216 @@ let job_id = manager.enqueue("send_email", json!({
 - **Retry Logic**: Configurable attempts with error handling
 - **Scheduling**: Delay jobs or schedule for specific times
 - **Monitoring**: Job status tracking and queue statistics
+
+## Email Integration
+
+AIVIANIA provides comprehensive email functionality with SMTP support, HTML templates, and user verification:
+
+```rust
+use aiviania::email::{EmailService, EmailConfig, EmailVerificationService, PasswordResetService};
+use std::sync::Arc;
+
+// Configure email service
+let email_config = EmailConfig {
+    smtp_host: "smtp.gmail.com".to_string(),
+    smtp_port: 587,
+    smtp_username: "your-email@gmail.com".to_string(),
+    smtp_password: "your-app-password".to_string(),
+    use_tls: true,
+    from_email: "noreply@yourapp.com".to_string(),
+    from_name: "Your App".to_string(),
+    templates_dir: "./templates".to_string(),
+};
+
+let email_service = Arc::new(EmailService::new(email_config)?);
+
+// Email verification service
+let verification_service = Arc::new(EmailVerificationService::new(email_service.clone()));
+
+// Send verification email
+let token = verification_service.send_verification("user@example.com", "user_id").await?;
+
+// Verify email token
+let verification_data = verification_service.verify_token(&token).await?;
+
+// Password reset service
+let reset_service = Arc::new(PasswordResetService::new(email_service.clone()));
+
+// Send password reset email
+let reset_token = reset_service.send_reset_email("user@example.com", "user_id").await?;
+
+// Verify reset token
+let reset_data = reset_service.verify_reset_token(&reset_token).await?;
+```
+
+### Email Features
+
+- **SMTP Support**: Configurable SMTP servers with TLS encryption
+- **HTML Templates**: Handlebars templating with custom data
+- **Email Verification**: Secure token-based email verification
+- **Password Reset**: Secure password reset with token validation
+- **Template Management**: Register and manage custom email templates
+- **Error Handling**: Comprehensive error types and recovery
+
+### Email Templates
+
+AIVIANIA includes default HTML email templates:
+
+- `verification.html`: Email verification with styled code display
+- `password_reset.html`: Password reset with secure token handling
+- `welcome.html`: Welcome email with feature highlights
+
+## GraphQL Support
+
+Complete GraphQL API implementation with schema definition, resolvers, and interactive playground:
+
+```rust
+use aiviania::graphql::{GraphQLService, GraphQLConfig, GraphQLContext, GraphQLMiddleware};
+use async_graphql::{Object, SimpleObject};
+use std::sync::Arc;
+
+// Configure GraphQL service
+let graphql_config = GraphQLConfig {
+    enable_playground: true,
+    path: "/graphql".to_string(),
+    enable_introspection: true,
+    max_complexity: Some(1000),
+    max_depth: Some(10),
+};
+
+let graphql_service = Arc::new(GraphQLService::new(graphql_config));
+
+// Add GraphQL middleware
+server.add_middleware(GraphQLMiddleware::new(
+    session_manager.clone(),
+    database.clone(),
+));
+
+// GraphQL routes
+server.add_route(Route::get("/graphql", graphql_playground_handler));
+server.add_route(Route::post("/graphql", graphql_endpoint_handler));
+```
+
+### GraphQL Schema Example
+
+```rust
+use async_graphql::*;
+
+// Define GraphQL types
+#[derive(SimpleObject)]
+struct User {
+    id: ID,
+    username: String,
+    email: String,
+    full_name: Option<String>,
+}
+
+// Query root
+#[Object]
+impl QueryRoot {
+    async fn user(&self, ctx: &Context<'_>, id: ID) -> Result<Option<User>> {
+        // Fetch user from database
+        Ok(Some(User {
+            id,
+            username: "example".to_string(),
+            email: "user@example.com".to_string(),
+            full_name: Some("Example User".to_string()),
+        }))
+    }
+
+    async fn users(&self, ctx: &Context<'_>, limit: Option<i32>) -> Result<Vec<User>> {
+        // Fetch users with pagination
+        Ok(vec![])
+    }
+}
+
+// Mutation root
+#[Object]
+impl MutationRoot {
+    async fn create_user(&self, ctx: &Context<'_>, input: CreateUserInput) -> Result<User> {
+        // Create new user
+        Ok(User {
+            id: ID::from(uuid::Uuid::new_v4().to_string()),
+            username: input.username,
+            email: input.email,
+            full_name: input.full_name,
+        })
+    }
+}
+```
+
+### GraphQL Features
+
+- **Schema Definition**: Type-safe schema with async resolvers
+- **Interactive Playground**: GraphiQL interface for testing queries
+- **Authentication Context**: User context in resolvers
+- **Query Complexity**: Protection against expensive queries
+- **Introspection**: API discovery and documentation
+- **Error Handling**: Structured error responses
+
+## OAuth Integration
+
+Multi-provider OAuth2 authentication with secure token handling and user management:
+
+```rust
+use aiviania::oauth::{OAuthService, OAuthConfig, OAuthMiddleware};
+use std::sync::Arc;
+
+// Configure OAuth providers
+let mut oauth_config = OAuthConfig::default();
+
+// Configure Google OAuth
+if let Some(google) = oauth_config.providers.get_mut("google") {
+    google.client_id = "your-google-client-id".to_string();
+    google.client_secret = "your-google-client-secret".to_string();
+    google.redirect_url = "http://localhost:3000/auth/google/callback".to_string();
+}
+
+// Configure GitHub OAuth
+if let Some(github) = oauth_config.providers.get_mut("github") {
+    github.client_id = "your-github-client-id".to_string();
+    github.client_secret = "your-github-client-secret".to_string();
+    github.redirect_url = "http://localhost:3000/auth/github/callback".to_string();
+}
+
+let oauth_service = Arc::new(OAuthService::new(oauth_config)?);
+
+// Add OAuth middleware
+server.add_middleware(OAuthMiddleware::new(
+    oauth_service.clone(),
+    session_manager.clone(),
+    database.clone(),
+));
+
+// OAuth routes
+server.add_route(Route::get("/auth/google", oauth_login_handler));
+server.add_route(Route::get("/auth/github", oauth_login_handler));
+server.add_route(Route::get("/auth/google/callback", oauth_callback_handler));
+server.add_route(Route::get("/auth/github/callback", oauth_callback_handler));
+```
+
+### OAuth Flow Example
+
+```bash
+# 1. Initiate OAuth login
+curl http://localhost:3000/auth/google
+# Redirects to Google OAuth
+
+# 2. Google redirects back with code
+# GET /auth/google/callback?code=...&state=...
+
+# 3. Exchange code for tokens and user info
+# Returns user information and authentication tokens
+```
+
+### OAuth Features
+
+- **Multi-Provider Support**: Google, GitHub, Facebook, and custom providers
+- **Secure Token Exchange**: CSRF protection with state parameters
+- **User Information**: Standardized user data across providers
+- **Session Integration**: Automatic session creation after OAuth
+- **Provider Management**: Easy configuration and status checking
+- **Error Handling**: Comprehensive OAuth error management
 
 ## API Documentation
 
@@ -427,6 +853,9 @@ AIVIANIA supports optional features that can be enabled with `--features`:
 - `redis`: Redis support for sessions, caching, and job queues
 - `sqlx`: PostgreSQL/MySQL support (alternative to SQLite)
 - `utoipa`: OpenAPI/Swagger API documentation generation
+- `email`: Email integration with SMTP and templates (enabled by default)
+- `graphql`: GraphQL API support with async-graphql (enabled by default)
+- `oauth`: OAuth2 authentication with multiple providers (enabled by default)
 
 ```bash
 # Enable Redis support
@@ -436,7 +865,10 @@ cargo build --features redis
 cargo run --features utoipa --example main
 
 # Enable multiple features
-cargo build --features "redis utoipa"
+cargo build --features "redis utoipa email graphql oauth"
+
+# Minimal build (disable optional features)
+cargo build --features ""
 ```
 
 ## Examples
@@ -452,6 +884,12 @@ cargo run --example session_example
 
 # Background jobs
 cargo run --example jobs_example
+
+# File upload
+cargo run --example upload_example
+
+# Email, GraphQL, and OAuth integration
+cargo run --example email_graphql_oauth_example
 
 # With Redis support
 cargo run --features redis --example jobs_example

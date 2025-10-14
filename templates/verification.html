@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        .verification-code {
+            background-color: #f8f9fa;
+            border: 2px dashed #4CAF50;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .code {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+            letter-spacing: 2px;
+            font-family: 'Courier New', monospace;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">AIVIANIA</div>
+            <h1>Welcome to AIVIANIA!</h1>
+        </div>
+
+        <p>Hello {{name}},</p>
+
+        <p>Thank you for registering with AIVIANIA! To complete your registration and secure your account, please verify your email address.</p>
+
+        <div class="verification-code">
+            <p><strong>Your verification code is:</strong></p>
+            <div class="code">{{token}}</div>
+        </div>
+
+        <p>You can also verify your email by clicking the button below:</p>
+
+        <div style="text-align: center;">
+            <a href="#" class="button">Verify Email Address</a>
+        </div>
+
+        <div class="warning">
+            <strong>Important:</strong> This verification code will expire in 24 hours. If you didn't create an account with AIVIANIA, please ignore this email.
+        </div>
+
+        <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+
+        <p>Best regards,<br>The AIVIANIA Team</p>
+
+        <div class="footer">
+            <p>This email was sent to you because you registered for an account with AIVIANIA.</p>
+            <p>If you no longer wish to receive these emails, you can <a href="#">unsubscribe</a> at any time.</p>
+        </div>
+    </div>
+</body>
+</html>

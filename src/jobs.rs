@@ -480,11 +480,6 @@ impl JobWorker {
             // Small delay to prevent busy polling
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
-
-        // This code is unreachable but kept for clarity
-        // In practice, this function runs indefinitely
-        join_all(handles).await;
-        Ok(())
     }
 }
 

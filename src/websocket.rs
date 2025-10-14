@@ -1,95 +1,80 @@
 //! WebSocket module - Real-time communication support.
 //!
 //! This module provides WebSocket server functionality for real-time bidirectional
-//! communication between clients and the server. It implements a simple subprotocol
-//! negotiation (selects the first supported protocol requested by the client)
-//! and a basic extensions negotiation for `permessage-deflate` (advertised if
-//! the client asked for it and we "support" it here).
+//! communication between clients and the server. Features include:
+//! - Room-based messaging for chat applications
+//! - User-specific messaging
+//! - JSON message handling
+//! - Connection management with heartbeats
+//! - Broadcasting capabilities
 
 use base64::{engine::general_purpose, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use hyper::{Body, Request, Response, StatusCode};
 use hyper::header::{CONNECTION, UPGRADE};
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tokio_tungstenite::WebSocketStream;
 
-/// Internal connection handler — spawned per websocket connection.
-async fn handle_ws_connection_inner(
-    ws_stream: WebSocketStream<hyper::upgrade::Upgraded>,
-    connections: Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<String>>>>,
-) {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let conn_id = format!("{:p}", &tx); // Simple ID based on pointer
-
-    // Add to connections
-    {
-        let mut conns = connections.lock().unwrap();
-        conns.insert(conn_id.clone(), tx);
-    }
-
-    let (mut write, mut read) = ws_stream.split();
-
-    // Task to send messages
-    let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if write.send(tokio_tungstenite::tungstenite::Message::Text(msg)).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // Task to receive messages
-    let connections_clone = connections.clone();
-    let conn_id_clone = conn_id.clone();
-    let recv_task = tokio::spawn(async move {
-        while let Some(msg) = read.next().await {
-            match msg {
-                Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                    println!("Received: {}", text);
-                    // Echo back for now
-                    if let Some(tx) = connections_clone.lock().unwrap().get(&conn_id_clone) {
-                        let _ = tx.send(format!("Echo: {}", text));
-                    }
-                }
-                Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
-                _ => {}
-            }
-        }
-    });
-
-    // Wait for either task to finish
-    tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
-    }
-
-    // Remove from connections
-    connections.lock().unwrap().remove(&conn_id);
+/// WebSocket message types
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum WSMessage {
+    /// Join a room
+    Join { room: String },
+    /// Leave a room
+    Leave { room: String },
+    /// Send message to room
+    RoomMessage { room: String, message: String },
+    /// Send private message to user
+    PrivateMessage { user_id: String, message: String },
+    /// Broadcast message to all connections
+    Broadcast { message: String },
+    /// Ping message for heartbeat
+    Ping,
+    /// Pong response
+    Pong,
+    /// Error message
+    Error { message: String },
 }
 
-/// WebSocket connection handler.
-pub struct WebSocketHandler {
-    connections: Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<String>>>>,
+/// WebSocket connection information
+#[derive(Debug, Clone)]
+pub struct WSConnection {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub rooms: Vec<String>,
+    pub sender: mpsc::UnboundedSender<String>,
+}
+
+/// Room-based WebSocket manager
+pub struct WebSocketManager {
+    connections: Arc<Mutex<HashMap<String, WSConnection>>>,
+    rooms: Arc<Mutex<HashMap<String, Vec<String>>>>, // room -> connection_ids
     supported_subprotocols: Vec<String>,
     support_permessage_deflate: bool,
 }
 
-impl WebSocketHandler {
-    /// Create a new WebSocket handler.
+impl WebSocketManager {
+    /// Create a new WebSocket manager
     pub fn new() -> Self {
         Self {
             connections: Arc::new(Mutex::new(HashMap::new())),
+            rooms: Arc::new(Mutex::new(HashMap::new())),
             supported_subprotocols: vec!["chat".to_string(), "json".to_string()],
             support_permessage_deflate: true,
         }
     }
 
-    /// Handle WebSocket upgrade request with subprotocol and extension negotiation.
+    /// Handle WebSocket upgrade request
     pub async fn handle_upgrade(
         &self,
         mut request: Request<Body>,
+        user_id: Option<String>,
     ) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
         // Quick validation for websocket upgrade
         let headers = request.headers();
@@ -152,12 +137,12 @@ impl WebSocketHandler {
 
         // Upgrade and spawn connection handler
         if let Some(on_upgrade) = request.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() {
-            let connections = self.connections.clone();
-            let chosen_proto = chosen_subprotocol.clone();
+            let manager = self.clone_manager();
+            let user_id_clone = user_id.clone();
             tokio::spawn(async move {
                 match on_upgrade.await {
                     Ok(upgraded) => {
-                        if let Some(p) = chosen_proto {
+                        if let Some(p) = chosen_subprotocol {
                             println!("Negotiated subprotocol: {}", p);
                         }
 
@@ -167,9 +152,9 @@ impl WebSocketHandler {
                             None,
                         ).await;
 
-                        handle_ws_connection_inner(ws_stream, connections).await;
+                        Self::handle_connection(ws_stream, manager, user_id_clone).await;
                     }
-                    Err(e) => eprintln!("Upgrade error: {:?}", e),
+                    Err(e) => eprintln!("WebSocket upgrade error: {:?}", e),
                 }
             });
         }
@@ -177,7 +162,250 @@ impl WebSocketHandler {
         Ok(response)
     }
 
-    /// Calculate WebSocket accept key.
+    /// Handle individual WebSocket connection
+    async fn handle_connection(
+        ws_stream: WebSocketStream<hyper::upgrade::Upgraded>,
+        manager: Arc<WebSocketManager>,
+        user_id: Option<String>,
+    ) {
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let conn_id = format!("conn_{}", uuid::Uuid::new_v4().simple());
+
+        // Create connection info
+        let connection = WSConnection {
+            id: conn_id.clone(),
+            user_id: user_id.clone(),
+            rooms: Vec::new(),
+            sender: tx,
+        };
+
+        // Add to connections
+        {
+            let mut conns = manager.connections.lock().await;
+            conns.insert(conn_id.clone(), connection);
+        }
+
+        let (write, read) = ws_stream.split();
+        let write = Arc::new(Mutex::new(write));
+
+        // Task to send messages
+        let write_clone = Arc::clone(&write);
+        let send_task = tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let mut write_guard = write_clone.lock().await;
+                if write_guard.send(tokio_tungstenite::tungstenite::Message::Text(msg)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Task to receive messages
+        let manager_clone = manager.clone();
+        let conn_id_clone = conn_id.clone();
+        let write_clone = Arc::clone(&write);
+        let recv_task = tokio::spawn(async move {
+            let mut read = read;
+            while let Some(msg) = read.next().await {
+                match msg {
+                    Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                        if let Err(e) = manager_clone.handle_message(&conn_id_clone, &text).await {
+                            eprintln!("Error handling WebSocket message: {:?}", e);
+                        }
+                    }
+                    Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
+                    Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => {
+                        let mut write_guard = write_clone.lock().await;
+                        if write_guard.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // Wait for either task to finish
+        tokio::select! {
+            _ = send_task => {},
+            _ = recv_task => {},
+        }
+
+        // Clean up connection
+        manager.remove_connection(&conn_id).await;
+    }
+
+    /// Handle incoming WebSocket message
+    async fn handle_message(&self, conn_id: &str, text: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let message: WSMessage = serde_json::from_str(text)?;
+
+        match message {
+            WSMessage::Join { room } => {
+                self.join_room(conn_id, &room).await?;
+                self.send_to_connection(conn_id, &serde_json::json!({
+                    "type": "joined",
+                    "room": room
+                }).to_string()).await?;
+            }
+            WSMessage::Leave { room } => {
+                self.leave_room(conn_id, &room).await?;
+                self.send_to_connection(conn_id, &serde_json::json!({
+                    "type": "left",
+                    "room": room
+                }).to_string()).await?;
+            }
+            WSMessage::RoomMessage { room, message } => {
+                self.broadcast_to_room(&room, &serde_json::json!({
+                    "type": "room_message",
+                    "room": room,
+                    "from": conn_id,
+                    "message": message
+                }).to_string(), Some(conn_id)).await?;
+            }
+            WSMessage::PrivateMessage { user_id, message } => {
+                self.send_to_user(&user_id, &serde_json::json!({
+                    "type": "private_message",
+                    "from": conn_id,
+                    "message": message
+                }).to_string()).await?;
+            }
+            WSMessage::Broadcast { message } => {
+                self.broadcast(&serde_json::json!({
+                    "type": "broadcast",
+                    "from": conn_id,
+                    "message": message
+                }).to_string()).await?;
+            }
+            WSMessage::Ping => {
+                self.send_to_connection(conn_id, &serde_json::json!({
+                    "type": "pong"
+                }).to_string()).await?;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Join a room
+    async fn join_room(&self, conn_id: &str, room: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut rooms = self.rooms.lock().await;
+        let room_members = rooms.entry(room.to_string()).or_insert_with(Vec::new);
+
+        if !room_members.contains(&conn_id.to_string()) {
+            room_members.push(conn_id.to_string());
+        }
+
+        // Update connection's rooms
+        let mut conns = self.connections.lock().await;
+        if let Some(conn) = conns.get_mut(conn_id) {
+            if !conn.rooms.contains(&room.to_string()) {
+                conn.rooms.push(room.to_string());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Leave a room
+    async fn leave_room(&self, conn_id: &str, room: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut rooms = self.rooms.lock().await;
+        if let Some(room_members) = rooms.get_mut(room) {
+            room_members.retain(|id| id != conn_id);
+            if room_members.is_empty() {
+                rooms.remove(room);
+            }
+        }
+
+        // Update connection's rooms
+        let mut conns = self.connections.lock().await;
+        if let Some(conn) = conns.get_mut(conn_id) {
+            conn.rooms.retain(|r| r != room);
+        }
+
+        Ok(())
+    }
+
+    /// Send message to specific connection
+    async fn send_to_connection(&self, conn_id: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let conns = self.connections.lock().await;
+        if let Some(conn) = conns.get(conn_id) {
+            let _ = conn.sender.send(message.to_string());
+        }
+        Ok(())
+    }
+
+    /// Send message to user by user_id
+    async fn send_to_user(&self, user_id: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let conns = self.connections.lock().await;
+        for conn in conns.values() {
+            if conn.user_id.as_ref() == Some(&user_id.to_string()) {
+                let _ = conn.sender.send(message.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    /// Broadcast message to all connections
+    pub async fn broadcast(&self, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let conns = self.connections.lock().await;
+        for conn in conns.values() {
+            let _ = conn.sender.send(message.to_string());
+        }
+        Ok(())
+    }
+
+    /// Broadcast message to room (optionally excluding a connection)
+    pub async fn broadcast_to_room(&self, room: &str, message: &str, exclude_conn: Option<&str>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let rooms = self.rooms.lock().await;
+        if let Some(room_members) = rooms.get(room) {
+            let conns = self.connections.lock().await;
+            for conn_id in room_members {
+                if Some(conn_id.as_str()) != exclude_conn {
+                    if let Some(conn) = conns.get(conn_id) {
+                        let _ = conn.sender.send(message.to_string());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove connection and clean up
+    async fn remove_connection(&self, conn_id: &str) {
+        // Remove from all rooms
+        let mut rooms = self.rooms.lock().await;
+        for room_members in rooms.values_mut() {
+            room_members.retain(|id| id != conn_id);
+        }
+        // Remove empty rooms
+        rooms.retain(|_, members| !members.is_empty());
+
+        // Remove connection
+        let mut conns = self.connections.lock().await;
+        conns.remove(conn_id);
+    }
+
+    /// Get connection count
+    pub async fn connection_count(&self) -> usize {
+        self.connections.lock().await.len()
+    }
+
+    /// Get room count
+    pub async fn room_count(&self) -> usize {
+        self.rooms.lock().await.len()
+    }
+
+    /// Clone the manager (for spawning tasks)
+    fn clone_manager(&self) -> Arc<WebSocketManager> {
+        Arc::new(WebSocketManager {
+            connections: Arc::clone(&self.connections),
+            rooms: Arc::clone(&self.rooms),
+            supported_subprotocols: self.supported_subprotocols.clone(),
+            support_permessage_deflate: self.support_permessage_deflate,
+        })
+    }
+
+    /// Calculate WebSocket accept key
     fn calculate_accept_key(&self, key: &[u8]) -> String {
         let mut hasher = Sha1::new();
         hasher.update(key);
@@ -185,32 +413,33 @@ impl WebSocketHandler {
         let result = hasher.finalize();
         general_purpose::STANDARD.encode(&result)
     }
-
-    /// Broadcast a message to all connections.
-    pub fn broadcast(&self, message: &str) {
-        let conns = self.connections.lock().unwrap();
-        for tx in conns.values() {
-            let _ = tx.send(message.to_string());
-        }
-    }
 }
 
 
 /// WebSocket plugin for the plugin system.
 pub struct WebSocketPlugin {
-    handler: Arc<WebSocketHandler>,
+    manager: Arc<WebSocketManager>,
 }
 
 impl WebSocketPlugin {
     /// Create a new WebSocket plugin.
     pub fn new() -> Self {
-        let handler = Arc::new(WebSocketHandler::new());
-        Self { handler }
+        let manager = Arc::new(WebSocketManager::new());
+        Self { manager }
     }
 
-    /// Get WebSocket handler (clone the Arc).
-    pub fn handler(&self) -> Arc<WebSocketHandler> {
-        self.handler.clone()
+    /// Get WebSocket manager (clone the Arc).
+    pub fn manager(&self) -> Arc<WebSocketManager> {
+        Arc::clone(&self.manager)
+    }
+
+    /// Handle WebSocket upgrade with optional user authentication
+    pub async fn handle_upgrade(
+        &self,
+        request: Request<Body>,
+        user_id: Option<String>,
+    ) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
+        self.manager.handle_upgrade(request, user_id).await
     }
 }
 

@@ -21,6 +21,10 @@ pub mod blockchain;
 pub mod docs;
 pub mod session;
 pub mod jobs;
+pub mod upload;
+pub mod email;
+pub mod graphql;
+pub mod oauth;
 
 // Re-export commonly used types for convenience
 pub use server::AivianiaServer;
@@ -32,7 +36,7 @@ pub use plugin::Plugin;
 pub use config::AppConfig;
 pub use auth::{AuthService, AuthMiddleware, login_handler, register_handler, LoginRequest, RegisterRequest};
 pub use database::{Database, DatabasePlugin, User};
-pub use websocket::{WebSocketHandler, WebSocketPlugin};
+pub use websocket::{WebSocketManager, WebSocketPlugin};
 pub use blockchain::{BlockchainClient, BlockchainPlugin};
 #[cfg(feature = "utoipa")]
 pub use docs::{swagger_ui, openapi_spec};
@@ -42,3 +46,7 @@ pub use session::RedisSessionStore;
 pub use jobs::{JobManager, JobWorker, Job, JobPriority, JobStatus, MemoryJobQueue};
 #[cfg(feature = "redis")]
 pub use jobs::RedisJobQueue;
+pub use upload::{UploadManager, UploadConfig, UploadedFile, UploadError, UploadMiddleware, get_uploaded_files, extract_and_store_files};
+pub use email::{EmailService, EmailConfig, EmailError, EmailVerificationService, PasswordResetService};
+pub use graphql::{GraphQLService, GraphQLConfig, GraphQLSchema, GraphQLContext, GraphQLMiddleware, graphql_handler, graphql_playground};
+pub use oauth::{OAuthService, OAuthConfig, OAuthUser, OAuthTokens, OAuthError, OAuthMiddleware};
