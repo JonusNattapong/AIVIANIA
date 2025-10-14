@@ -398,6 +398,28 @@ async fn get_user(req: AivianiaRequest) -> AivianiaResponse {
         email: "john@example.com".to_string(),
     })
 }
+
+## Contributing & Running Checks
+
+Thank you for contributing to AIVIANIA! To run basic checks locally:
+
+```powershell
+# Run the type check / build
+cargo check
+
+# Run tests (once tests are added)
+cargo test
+```
+
+Coding style: please follow Rust 2021 idioms, run `cargo fmt` before submitting PRs, and keep commits small and focused.
+
+## Changelog (Recent)
+
+- 2025-10-14: Security modules updated
+    - Fixed several compile-time warnings in `src/security/*` (unused fields and helpers). These were intentionally marked or renamed to avoid dead-code warnings while the modules are being integrated and tested.
+    - CSRF, CORS and security header middleware implemented and compiled cleanly under `cargo check`.
+
+If you'd like me to open a PR with these changes or create further unit tests and examples, tell me which next task to pick from the todo list.
 ```
 
 ## Session Management
