@@ -25,3 +25,22 @@ jobs:
             Draft release created for tag ${{ github.ref_name }}. The CI workflow will build and upload platform-specific assets.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dispatch release-assets workflow
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = process.env.GITHUB_REF_NAME || '${{ github.ref_name }}';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            // Find workflow by file name
+            const workflow_id = 'release-assets.yml';
+            await github.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id,
+              ref: 'refs/heads/${{ github.ref }}'.split('/').slice(2).join('/'),
+              inputs: { tag_name: tag }
+            });

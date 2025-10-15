@@ -3,6 +3,12 @@ name: Build and Publish Release Assets (matrix)
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to package artifacts for (used when manually dispatched)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -49,7 +55,13 @@ jobs:
         if: matrix.os != 'windows'
         id: package_unix
         run: |
-          ART=release_artifacts_${{ matrix.os }}_${{ github.ref_name }}.zip
+          # Determine tag name: prefer release-created ref name, fall back to workflow_dispatch input
+          if [ -n "${GITHUB_REF_NAME:-}" ]; then
+            TAG_NAME="$GITHUB_REF_NAME"
+          else
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+          fi
+          ART=release_artifacts_${{ matrix.os }}_${TAG_NAME}.zip
           echo "Creating $ART"
           zip -r "$ART" target/release examples README.md CHANGELOG.md || true
           echo "artifact=$ART"
@@ -59,7 +71,13 @@ jobs:
         if: matrix.os == 'windows'
         id: package_windows
         run: |
-          $art = "release_artifacts_${{ matrix.os }}_${{ github.ref_name }}.zip"
+          # Determine tag name: prefer release-created ref name, fall back to workflow_dispatch input
+          if ($env:GITHUB_REF_NAME) {
+            $tag = $env:GITHUB_REF_NAME
+          } else {
+            $tag = '${{ github.event.inputs.tag_name }}'
+          }
+          $art = "release_artifacts_${{ matrix.os }}_${tag}.zip"
           Write-Output "Creating $art"
           $items = Get-ChildItem -Path target\release -File | Select-Object -ExpandProperty FullName
           $examples = Get-ChildItem -Path examples -Filter *.rs | Select-Object -ExpandProperty FullName
