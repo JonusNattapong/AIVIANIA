@@ -35,6 +35,8 @@ prometheus = "0.14"
 once_cell = "1.20"
 thiserror = "1.0"
 redis = { version = "0.22", optional = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 sqlx = { package = "sqlx", version = "0.7", optional = true, default-features = false, features = ["runtime-tokio-rustls", "macros"] }
 web3 = { version = "0.19", default-features = false, features = ["http-tls"] }
 utoipa = { version = "4", features = ["axum_extras"], optional = true }
