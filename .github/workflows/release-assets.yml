@@ -1,13 +1,26 @@
-name: Build and Publish Release Assets
+name: Build and Publish Release Assets (matrix)
 
 on:
   release:
     types: [created]
 
 jobs:
-  build-and-publish:
-    name: Build and publish assets
-    runs-on: ubuntu-latest
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu
+            runner: ubuntu-latest
+            shell: bash
+          - os: macos
+            runner: macos-latest
+            shell: bash
+          - os: windows
+            runner: windows-latest
+            shell: pwsh
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,25 +42,36 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Install zip (for packaging)
-        run: sudo apt-get update && sudo apt-get install -y zip
-
       - name: Build release and examples
         run: cargo build --release --examples
 
-      - id: package
-        name: Package release artifacts
+      - name: Package artifacts (Linux/macOS)
+        if: matrix.os != 'windows'
+        id: package_unix
         run: |
-          ART="release_artifacts_${GITHUB_REF_NAME}.zip"
+          ART=release_artifacts_${{ matrix.os }}_${{ github.ref_name }}.zip
           echo "Creating $ART"
-          # include built binaries, examples source, README and CHANGELOG
           zip -r "$ART" target/release examples README.md CHANGELOG.md || true
-          echo "ART=$ART" >> $GITHUB_OUTPUT
-        shell: bash
+          echo "artifact=$ART"
+          echo "artifact=$ART" >> $GITHUB_OUTPUT
+
+      - name: Package artifacts (Windows)
+        if: matrix.os == 'windows'
+        id: package_windows
+        run: |
+          $art = "release_artifacts_${{ matrix.os }}_${{ github.ref_name }}.zip"
+          Write-Output "Creating $art"
+          $items = Get-ChildItem -Path target\release -File | Select-Object -ExpandProperty FullName
+          $examples = Get-ChildItem -Path examples -Filter *.rs | Select-Object -ExpandProperty FullName
+          $items = $items + $examples + @('README.md','CHANGELOG.md')
+          Compress-Archive -Path $items -DestinationPath $art -Force
+          Write-Output "artifact=$art"
+          echo "artifact=$art" >> $GITHUB_OUTPUT
+        shell: pwsh
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ steps.package.outputs.ART }}
+          files: ${{ steps.package_unix.outputs.artifact || steps.package_windows.outputs.artifact }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
