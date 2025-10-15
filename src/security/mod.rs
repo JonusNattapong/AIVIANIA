@@ -10,26 +10,29 @@
 //! - Authentication middleware enhancements
 //! - Security event logging and monitoring
 
-pub mod csrf;
+pub mod config;
 pub mod cors;
+pub mod csrf;
+pub mod events;
 pub mod headers;
 pub mod validation;
-pub mod events;
-pub mod config;
 
-pub use csrf::*;
+pub use config::{
+    CorsConfig, CsrfConfig, LogFormat, LogLevel, LoggingConfig, RateLimitingConfig, SameSitePolicy,
+    SecurityConfig, SecurityHeadersConfig, SecurityHeadersPreset, ValidationConfig,
+};
 pub use cors::*;
+pub use csrf::*;
+pub use events::*;
 pub use headers::*;
 pub use validation::*;
-pub use events::*;
-pub use config::{SecurityConfig, CsrfConfig, CorsConfig, SecurityHeadersConfig, ValidationConfig, RateLimitingConfig, LoggingConfig, SameSitePolicy, SecurityHeadersPreset, LogLevel, LogFormat};
 
 /// Result type for security operations
 pub type SecurityResult<T> = Result<T, SecurityError>;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
 
 /// Security operation errors
 #[derive(Debug, thiserror::Error)]
@@ -143,16 +146,18 @@ impl SecurityEventLogger {
     /// Get events by type
     pub async fn get_events_by_type(&self, event_type: &str) -> Vec<SecurityEvent> {
         let events = self.events.read().await;
-        events.iter().filter(|event| {
-            match event {
+        events
+            .iter()
+            .filter(|event| match event {
                 SecurityEvent::CsrfAttackAttempt { .. } if event_type == "csrf" => true,
                 SecurityEvent::CorsViolation { .. } if event_type == "cors" => true,
                 SecurityEvent::InputValidationFailure { .. } if event_type == "validation" => true,
                 SecurityEvent::RateLimitExceeded { .. } if event_type == "rate_limit" => true,
                 SecurityEvent::SuspiciousActivity { .. } if event_type == "suspicious" => true,
                 _ => false,
-            }
-        }).cloned().collect()
+            })
+            .cloned()
+            .collect()
     }
 
     /// Clear all events
@@ -207,11 +212,16 @@ impl SecurityMiddlewareStack {
     }
 
     /// Process request through security middlewares
-    pub async fn process(&self, request: hyper::Request<hyper::Body>) -> SecurityResult<hyper::Request<hyper::Body>> {
+    pub async fn process(
+        &self,
+        request: hyper::Request<hyper::Body>,
+    ) -> SecurityResult<hyper::Request<hyper::Body>> {
         let mut current_request = request;
 
         for middleware in &self.middlewares {
-            current_request = middleware.process(current_request, self.event_logger.clone()).await?;
+            current_request = middleware
+                .process(current_request, self.event_logger.clone())
+                .await?;
         }
 
         Ok(current_request)

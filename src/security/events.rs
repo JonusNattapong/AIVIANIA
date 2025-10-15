@@ -43,71 +43,78 @@ impl EventFilter {
     }
 
     /// Filter events by time range
-    pub fn by_time_range(mut self, start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> Self {
+    pub fn by_time_range(
+        mut self,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+    ) -> Self {
         self.time_range = Some((start, end));
         self
     }
 
     /// Apply filter to events
     pub fn apply<'a>(&self, events: &'a [SecurityEvent]) -> Vec<&'a SecurityEvent> {
-        events.iter().filter(|event| {
-            // Check event type
-            if !self.event_types.is_empty() {
-                let event_type = match event {
-                    SecurityEvent::CsrfAttackAttempt { .. } => "csrf",
-                    SecurityEvent::CorsViolation { .. } => "cors",
-                    SecurityEvent::InputValidationFailure { .. } => "validation",
-                    SecurityEvent::RateLimitExceeded { .. } => "rate_limit",
-                    SecurityEvent::SuspiciousActivity { .. } => "suspicious",
-                };
-                if !self.event_types.contains(&event_type.to_string()) {
-                    return false;
+        events
+            .iter()
+            .filter(|event| {
+                // Check event type
+                if !self.event_types.is_empty() {
+                    let event_type = match event {
+                        SecurityEvent::CsrfAttackAttempt { .. } => "csrf",
+                        SecurityEvent::CorsViolation { .. } => "cors",
+                        SecurityEvent::InputValidationFailure { .. } => "validation",
+                        SecurityEvent::RateLimitExceeded { .. } => "rate_limit",
+                        SecurityEvent::SuspiciousActivity { .. } => "suspicious",
+                    };
+                    if !self.event_types.contains(&event_type.to_string()) {
+                        return false;
+                    }
                 }
-            }
 
-            // Check severity
-            if !self.severities.is_empty() {
-                let severity = match event {
-                    SecurityEvent::CsrfAttackAttempt { .. } => SecuritySeverity::High,
-                    SecurityEvent::CorsViolation { .. } => SecuritySeverity::Medium,
-                    SecurityEvent::InputValidationFailure { .. } => SecuritySeverity::Low,
-                    SecurityEvent::RateLimitExceeded { .. } => SecuritySeverity::Medium,
-                    SecurityEvent::SuspiciousActivity { severity, .. } => severity.clone(),
-                };
-                if !self.severities.contains(&severity) {
-                    return false;
+                // Check severity
+                if !self.severities.is_empty() {
+                    let severity = match event {
+                        SecurityEvent::CsrfAttackAttempt { .. } => SecuritySeverity::High,
+                        SecurityEvent::CorsViolation { .. } => SecuritySeverity::Medium,
+                        SecurityEvent::InputValidationFailure { .. } => SecuritySeverity::Low,
+                        SecurityEvent::RateLimitExceeded { .. } => SecuritySeverity::Medium,
+                        SecurityEvent::SuspiciousActivity { severity, .. } => severity.clone(),
+                    };
+                    if !self.severities.contains(&severity) {
+                        return false;
+                    }
                 }
-            }
 
-            // Check IP address
-            if !self.ip_addresses.is_empty() {
-                let ip = match event {
-                    SecurityEvent::CsrfAttackAttempt { ip, .. } => ip,
-                    SecurityEvent::RateLimitExceeded { ip, .. } => ip,
-                    SecurityEvent::SuspiciousActivity { ip, .. } => ip,
-                    _ => "unknown",
-                };
-                if !self.ip_addresses.contains(&ip.to_string()) {
-                    return false;
+                // Check IP address
+                if !self.ip_addresses.is_empty() {
+                    let ip = match event {
+                        SecurityEvent::CsrfAttackAttempt { ip, .. } => ip,
+                        SecurityEvent::RateLimitExceeded { ip, .. } => ip,
+                        SecurityEvent::SuspiciousActivity { ip, .. } => ip,
+                        _ => "unknown",
+                    };
+                    if !self.ip_addresses.contains(&ip.to_string()) {
+                        return false;
+                    }
                 }
-            }
 
-            // Check time range
-            if let Some((start, end)) = self.time_range {
-                let event_time = match event {
-                    SecurityEvent::CsrfAttackAttempt { timestamp, .. } => *timestamp,
-                    SecurityEvent::CorsViolation { timestamp, .. } => *timestamp,
-                    SecurityEvent::InputValidationFailure { timestamp, .. } => *timestamp,
-                    SecurityEvent::RateLimitExceeded { timestamp, .. } => *timestamp,
-                    SecurityEvent::SuspiciousActivity { timestamp, .. } => *timestamp,
-                };
-                if event_time < start || event_time > end {
-                    return false;
+                // Check time range
+                if let Some((start, end)) = self.time_range {
+                    let event_time = match event {
+                        SecurityEvent::CsrfAttackAttempt { timestamp, .. } => *timestamp,
+                        SecurityEvent::CorsViolation { timestamp, .. } => *timestamp,
+                        SecurityEvent::InputValidationFailure { timestamp, .. } => *timestamp,
+                        SecurityEvent::RateLimitExceeded { timestamp, .. } => *timestamp,
+                        SecurityEvent::SuspiciousActivity { timestamp, .. } => *timestamp,
+                    };
+                    if event_time < start || event_time > end {
+                        return false;
+                    }
                 }
-            }
 
-            true
-        }).collect()
+                true
+            })
+            .collect()
     }
 }
 
@@ -131,24 +138,69 @@ impl EventExporter {
         for event in events {
             // normalize into (timestamp, event_type, severity, details) all as owned values
             let (ts, event_type, severity, details) = match event {
-                SecurityEvent::CsrfAttackAttempt { timestamp, ip, url, .. } => {
-                    (timestamp.clone(), "csrf_attack".to_string(), "high".to_string(), format!("ip={}, url={}", ip, url))
-                }
-                SecurityEvent::CorsViolation { timestamp, origin, method, .. } => {
-                    (timestamp.clone(), "cors_violation".to_string(), "medium".to_string(), format!("origin={:?}, method={}", origin, method))
-                }
-                SecurityEvent::InputValidationFailure { timestamp, field, rule, .. } => {
-                    (timestamp.clone(), "validation_failure".to_string(), "low".to_string(), format!("field={}, rule={}", field, rule))
-                }
-                SecurityEvent::RateLimitExceeded { timestamp, ip, endpoint, limit, .. } => {
-                    (timestamp.clone(), "rate_limit_exceeded".to_string(), "medium".to_string(), format!("ip={}, endpoint={}, limit={}", ip, endpoint, limit))
-                }
-                SecurityEvent::SuspiciousActivity { timestamp, ip, activity, severity, .. } => {
-                    (timestamp.clone(), "suspicious_activity".to_string(), format!("{:?}", severity).to_lowercase(), format!("ip={}, activity={}", ip, activity))
-                }
+                SecurityEvent::CsrfAttackAttempt {
+                    timestamp, ip, url, ..
+                } => (
+                    timestamp.clone(),
+                    "csrf_attack".to_string(),
+                    "high".to_string(),
+                    format!("ip={}, url={}", ip, url),
+                ),
+                SecurityEvent::CorsViolation {
+                    timestamp,
+                    origin,
+                    method,
+                    ..
+                } => (
+                    timestamp.clone(),
+                    "cors_violation".to_string(),
+                    "medium".to_string(),
+                    format!("origin={:?}, method={}", origin, method),
+                ),
+                SecurityEvent::InputValidationFailure {
+                    timestamp,
+                    field,
+                    rule,
+                    ..
+                } => (
+                    timestamp.clone(),
+                    "validation_failure".to_string(),
+                    "low".to_string(),
+                    format!("field={}, rule={}", field, rule),
+                ),
+                SecurityEvent::RateLimitExceeded {
+                    timestamp,
+                    ip,
+                    endpoint,
+                    limit,
+                    ..
+                } => (
+                    timestamp.clone(),
+                    "rate_limit_exceeded".to_string(),
+                    "medium".to_string(),
+                    format!("ip={}, endpoint={}, limit={}", ip, endpoint, limit),
+                ),
+                SecurityEvent::SuspiciousActivity {
+                    timestamp,
+                    ip,
+                    activity,
+                    severity,
+                    ..
+                } => (
+                    timestamp.clone(),
+                    "suspicious_activity".to_string(),
+                    format!("{:?}", severity).to_lowercase(),
+                    format!("ip={}, activity={}", ip, activity),
+                ),
             };
 
-            csv.push_str(&format!("{},{},{},{}\n", ts.to_rfc3339(), event_type, severity, details));
+            csv.push_str(&format!(
+                "{},{},{},{}\n",
+                ts.to_rfc3339(),
+                event_type,
+                severity,
+                details
+            ));
         }
 
         csv
@@ -192,9 +244,16 @@ impl SecurityMetricsCalculator {
                     *metrics.top_attack_sources.entry(ip.clone()).or_insert(0) += 1;
                     Self::increment_hourly(&mut metrics.events_by_hour, *timestamp);
                 }
-                SecurityEvent::SuspiciousActivity { timestamp, ip, severity, .. } => {
+                SecurityEvent::SuspiciousActivity {
+                    timestamp,
+                    ip,
+                    severity,
+                    ..
+                } => {
                     metrics.suspicious_activities += 1;
-                    if *severity == SecuritySeverity::High || *severity == SecuritySeverity::Critical {
+                    if *severity == SecuritySeverity::High
+                        || *severity == SecuritySeverity::Critical
+                    {
                         *metrics.top_attack_sources.entry(ip.clone()).or_insert(0) += 1;
                     }
                     Self::increment_hourly(&mut metrics.events_by_hour, *timestamp);
@@ -206,7 +265,10 @@ impl SecurityMetricsCalculator {
     }
 
     /// Increment hourly counter
-    fn increment_hourly(hourly: &mut HashMap<String, u64>, timestamp: chrono::DateTime<chrono::Utc>) {
+    fn increment_hourly(
+        hourly: &mut HashMap<String, u64>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) {
         let hour = timestamp.format("%Y-%m-%d %H:00").to_string();
         *hourly.entry(hour).or_insert(0) += 1;
     }
@@ -255,7 +317,9 @@ impl SecurityAlertSystem {
         for rule in &self.rules {
             // Check cooldown
             if let Some(last_alert) = self.last_alerts.get(&rule.name) {
-                if now.signed_duration_since(*last_alert) < chrono::Duration::seconds(self.alert_cooldown.as_secs() as i64) {
+                if now.signed_duration_since(*last_alert)
+                    < chrono::Duration::seconds(self.alert_cooldown.as_secs() as i64)
+                {
                     continue;
                 }
             }
@@ -316,7 +380,8 @@ impl AlertRule {
 
     /// Get matching events
     fn get_matching_events(&self, events: &[SecurityEvent]) -> Vec<SecurityEvent> {
-        events.iter()
+        events
+            .iter()
             .filter(|event| (self.event_filter)(event))
             .cloned()
             .collect()
@@ -340,9 +405,12 @@ mod tests {
     #[test]
     fn test_to_csv_contains_headers_and_rows() {
         let now = chrono::Utc::now();
-        let events = vec![
-            SecurityEvent::CsrfAttackAttempt { ip: "1.2.3.4".to_string(), user_agent: None, url: "/test".to_string(), timestamp: now },
-        ];
+        let events = vec![SecurityEvent::CsrfAttackAttempt {
+            ip: "1.2.3.4".to_string(),
+            user_agent: None,
+            url: "/test".to_string(),
+            timestamp: now,
+        }];
 
         let csv = EventExporter::to_csv(&events);
         assert!(csv.contains("timestamp,event_type,severity,details"));

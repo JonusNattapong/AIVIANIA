@@ -10,14 +10,14 @@
 
 use base64::{engine::general_purpose, Engine as _};
 use futures_util::{SinkExt, StreamExt};
-use hyper::{Body, Request, Response, StatusCode};
 use hyper::header::{CONNECTION, UPGRADE};
+use hyper::{Body, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 
 /// Room information
@@ -32,21 +32,35 @@ pub struct RoomInfo {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum WSMessage {
-    Join { room: String },
+    Join {
+        room: String,
+    },
     /// Leave a room
-    Leave { room: String },
+    Leave {
+        room: String,
+    },
     /// Send message to room
-    RoomMessage { room: String, message: String },
+    RoomMessage {
+        room: String,
+        message: String,
+    },
     /// Send private message to user
-    PrivateMessage { user_id: String, message: String },
+    PrivateMessage {
+        user_id: String,
+        message: String,
+    },
     /// Broadcast message to all connections
-    Broadcast { message: String },
+    Broadcast {
+        message: String,
+    },
     /// Ping message for heartbeat
     Ping,
     /// Pong response
     Pong,
     /// Error message
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 /// WebSocket connection information
@@ -85,13 +99,24 @@ impl WebSocketManager {
     ) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
         // Quick validation for websocket upgrade
         let headers = request.headers();
-        let upgrade_hdr = headers.get(UPGRADE).and_then(|h| h.to_str().ok()).map(|s| s.to_ascii_lowercase());
-        let connection_hdr = headers.get(CONNECTION).and_then(|h| h.to_str().ok()).map(|s| s.to_ascii_lowercase());
+        let upgrade_hdr = headers
+            .get(UPGRADE)
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_ascii_lowercase());
+        let connection_hdr = headers
+            .get(CONNECTION)
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_ascii_lowercase());
         let sec_key = headers.get("sec-websocket-key");
 
-        if upgrade_hdr.as_deref() != Some("websocket") ||
-            connection_hdr.as_deref().map(|s| s.contains("upgrade")).unwrap_or(false) == false ||
-            sec_key.is_none() {
+        if upgrade_hdr.as_deref() != Some("websocket")
+            || connection_hdr
+                .as_deref()
+                .map(|s| s.contains("upgrade"))
+                .unwrap_or(false)
+                == false
+            || sec_key.is_none()
+        {
             return Ok(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::from("Expected WebSocket upgrade request"))?);
@@ -143,7 +168,10 @@ impl WebSocketManager {
         let response = builder.body(Body::empty())?;
 
         // Upgrade and spawn connection handler
-        if let Some(on_upgrade) = request.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() {
+        if let Some(on_upgrade) = request
+            .extensions_mut()
+            .remove::<hyper::upgrade::OnUpgrade>()
+        {
             let manager = self.clone_manager();
             let user_id_clone = user_id.clone();
             tokio::spawn(async move {
@@ -157,7 +185,8 @@ impl WebSocketManager {
                             upgraded,
                             tokio_tungstenite::tungstenite::protocol::Role::Server,
                             None,
-                        ).await;
+                        )
+                        .await;
 
                         Self::handle_connection(ws_stream, manager, user_id_clone).await;
                     }
@@ -200,7 +229,11 @@ impl WebSocketManager {
         let send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 let mut write_guard = write_clone.lock().await;
-                if write_guard.send(tokio_tungstenite::tungstenite::Message::Text(msg)).await.is_err() {
+                if write_guard
+                    .send(tokio_tungstenite::tungstenite::Message::Text(msg))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -222,7 +255,11 @@ impl WebSocketManager {
                     Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
                     Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => {
                         let mut write_guard = write_clone.lock().await;
-                        if write_guard.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await.is_err() {
+                        if write_guard
+                            .send(tokio_tungstenite::tungstenite::Message::Pong(data))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -242,50 +279,84 @@ impl WebSocketManager {
     }
 
     /// Handle incoming WebSocket message
-    async fn handle_message(&self, conn_id: &str, text: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_message(
+        &self,
+        conn_id: &str,
+        text: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let message: WSMessage = serde_json::from_str(text)?;
 
         match message {
             WSMessage::Join { room } => {
                 self.join_room(conn_id, &room).await?;
-                self.send_to_connection(conn_id, &serde_json::json!({
-                    "type": "joined",
-                    "room": room
-                }).to_string()).await?;
+                self.send_to_connection(
+                    conn_id,
+                    &serde_json::json!({
+                        "type": "joined",
+                        "room": room
+                    })
+                    .to_string(),
+                )
+                .await?;
             }
             WSMessage::Leave { room } => {
                 self.leave_room(conn_id, &room).await?;
-                self.send_to_connection(conn_id, &serde_json::json!({
-                    "type": "left",
-                    "room": room
-                }).to_string()).await?;
+                self.send_to_connection(
+                    conn_id,
+                    &serde_json::json!({
+                        "type": "left",
+                        "room": room
+                    })
+                    .to_string(),
+                )
+                .await?;
             }
             WSMessage::RoomMessage { room, message } => {
-                self.broadcast_to_room(&room, &serde_json::json!({
-                    "type": "room_message",
-                    "room": room,
-                    "from": conn_id,
-                    "message": message
-                }).to_string(), Some(conn_id)).await?;
+                self.broadcast_to_room(
+                    &room,
+                    &serde_json::json!({
+                        "type": "room_message",
+                        "room": room,
+                        "from": conn_id,
+                        "message": message
+                    })
+                    .to_string(),
+                    Some(conn_id),
+                )
+                .await?;
             }
             WSMessage::PrivateMessage { user_id, message } => {
-                self.send_to_user(&user_id, &serde_json::json!({
-                    "type": "private_message",
-                    "from": conn_id,
-                    "message": message
-                }).to_string()).await?;
+                self.send_to_user(
+                    &user_id,
+                    &serde_json::json!({
+                        "type": "private_message",
+                        "from": conn_id,
+                        "message": message
+                    })
+                    .to_string(),
+                )
+                .await?;
             }
             WSMessage::Broadcast { message } => {
-                self.broadcast(&serde_json::json!({
-                    "type": "broadcast",
-                    "from": conn_id,
-                    "message": message
-                }).to_string()).await?;
+                self.broadcast(
+                    &serde_json::json!({
+                        "type": "broadcast",
+                        "from": conn_id,
+                        "message": message
+                    })
+                    .to_string(),
+                )
+                .await?;
             }
             WSMessage::Ping => {
-                self.send_to_connection(conn_id, &serde_json::json!({
-                    "type": "pong"
-                }).to_string()).await?;
+                self.send_to_connection(
+                    conn_id,
+                    &serde_json::json!({
+                        "type": "pong"
+                    })
+                    .to_string(),
+                )
+                .await?;
             }
             _ => {}
         }
@@ -294,7 +365,11 @@ impl WebSocketManager {
     }
 
     /// Join a room
-    async fn join_room(&self, conn_id: &str, room: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn join_room(
+        &self,
+        conn_id: &str,
+        room: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut rooms = self.rooms.lock().await;
         let room_members = rooms.entry(room.to_string()).or_insert_with(Vec::new);
 
@@ -314,7 +389,11 @@ impl WebSocketManager {
     }
 
     /// Leave a room
-    async fn leave_room(&self, conn_id: &str, room: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn leave_room(
+        &self,
+        conn_id: &str,
+        room: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut rooms = self.rooms.lock().await;
         if let Some(room_members) = rooms.get_mut(room) {
             room_members.retain(|id| id != conn_id);
@@ -333,7 +412,11 @@ impl WebSocketManager {
     }
 
     /// Send message to specific connection
-    async fn send_to_connection(&self, conn_id: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_to_connection(
+        &self,
+        conn_id: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let conns = self.connections.lock().await;
         if let Some(conn) = conns.get(conn_id) {
             let _ = conn.sender.send(message.to_string());
@@ -342,7 +425,11 @@ impl WebSocketManager {
     }
 
     /// Send message to user by user_id
-    async fn send_to_user(&self, user_id: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_to_user(
+        &self,
+        user_id: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let conns = self.connections.lock().await;
         for conn in conns.values() {
             if conn.user_id.as_ref() == Some(&user_id.to_string()) {
@@ -353,7 +440,10 @@ impl WebSocketManager {
     }
 
     /// Broadcast message to all connections
-    pub async fn broadcast(&self, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn broadcast(
+        &self,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let conns = self.connections.lock().await;
         for conn in conns.values() {
             let _ = conn.sender.send(message.to_string());
@@ -362,7 +452,12 @@ impl WebSocketManager {
     }
 
     /// Broadcast message to room (optionally excluding a connection)
-    pub async fn broadcast_to_room(&self, room: &str, message: &str, exclude_conn: Option<&str>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn broadcast_to_room(
+        &self,
+        room: &str,
+        message: &str,
+        exclude_conn: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let rooms = self.rooms.lock().await;
         if let Some(room_members) = rooms.get(room) {
             let conns = self.connections.lock().await;
@@ -435,7 +530,6 @@ impl WebSocketManager {
     }
 }
 
-
 /// WebSocket plugin for the plugin system.
 pub struct WebSocketPlugin {
     manager: Arc<WebSocketManager>,
@@ -472,7 +566,14 @@ impl crate::plugin::Plugin for WebSocketPlugin {
         "websocket"
     }
 
-    fn init(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    fn init(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>>
+                + Send,
+        >,
+    > {
         Box::pin(async { Ok(()) })
     }
 }

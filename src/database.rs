@@ -57,13 +57,25 @@ pub enum QueryResult {
 #[async_trait]
 pub trait DatabaseConnection: Send + Sync {
     /// Execute a raw query
-    async fn execute(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+    async fn execute(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError>;
 
     /// Execute a query and return rows
-    async fn query(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+    async fn query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError>;
 
     /// Execute a query and return the first row
-    async fn query_one(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError>;
+    async fn query_one(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError>;
 
     /// Check if connection is healthy
     async fn ping(&self) -> Result<bool, DatabaseError>;
@@ -76,10 +88,18 @@ pub trait DatabaseConnection: Send + Sync {
 #[async_trait]
 pub trait Transaction: Send + Sync {
     /// Execute query within transaction
-    async fn execute(&mut self, query: &str, params: Vec<serde_json::Value>) -> Result<u64, DatabaseError>;
+    async fn execute(
+        &mut self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<u64, DatabaseError>;
 
     /// Query within transaction
-    async fn query(&mut self, query: &str, params: Vec<serde_json::Value>) -> Result<Vec<HashMap<String, serde_json::Value>>, DatabaseError>;
+    async fn query(
+        &mut self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>, DatabaseError>;
 
     /// Commit the transaction
     async fn commit(self: Box<Self>) -> Result<(), DatabaseError>;
@@ -97,10 +117,16 @@ pub trait Migration: Send + Sync {
     fn description(&self) -> &'static str;
 
     /// Apply the migration (up)
-    fn up<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
+    fn up<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
 
     /// Rollback the migration (down)
-    fn down<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
+    fn down<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>;
 }
 
 /// Database errors
@@ -162,17 +188,23 @@ impl DatabaseManager {
     }
 
     /// Create database connection based on type
-    async fn create_connection(config: DatabaseConfig) -> Result<Arc<dyn DatabaseConnection>, DatabaseError> {
+    async fn create_connection(
+        config: DatabaseConfig,
+    ) -> Result<Arc<dyn DatabaseConnection>, DatabaseError> {
         match config.database_type {
             DatabaseType::Sqlite => {
                 #[cfg(feature = "sqlite")]
                 {
                     use crate::database::backends::sqlite::SqliteConnection;
-                    Ok(Arc::new(SqliteConnection::new(&config.connection_string).await?))
+                    Ok(Arc::new(
+                        SqliteConnection::new(&config.connection_string).await?,
+                    ))
                 }
                 #[cfg(not(feature = "sqlite"))]
                 {
-                    Err(DatabaseError::ConfigError("SQLite support not enabled. Enable with --features sqlite".to_string()))
+                    Err(DatabaseError::ConfigError(
+                        "SQLite support not enabled. Enable with --features sqlite".to_string(),
+                    ))
                 }
             }
             DatabaseType::PostgreSQL => {
@@ -183,7 +215,10 @@ impl DatabaseManager {
                 }
                 #[cfg(not(feature = "postgres"))]
                 {
-                    Err(DatabaseError::ConfigError("PostgreSQL support not enabled. Enable with --features postgres".to_string()))
+                    Err(DatabaseError::ConfigError(
+                        "PostgreSQL support not enabled. Enable with --features postgres"
+                            .to_string(),
+                    ))
                 }
             }
             DatabaseType::MySQL => {
@@ -194,7 +229,9 @@ impl DatabaseManager {
                 }
                 #[cfg(not(feature = "mysql"))]
                 {
-                    Err(DatabaseError::ConfigError("MySQL support not enabled. Enable with --features mysql".to_string()))
+                    Err(DatabaseError::ConfigError(
+                        "MySQL support not enabled. Enable with --features mysql".to_string(),
+                    ))
                 }
             }
             DatabaseType::MongoDB => {
@@ -208,7 +245,9 @@ impl DatabaseManager {
                 }
                 #[cfg(not(feature = "mongodb"))]
                 {
-                    Err(DatabaseError::ConfigError("MongoDB support not enabled. Enable with --features mongodb".to_string()))
+                    Err(DatabaseError::ConfigError(
+                        "MongoDB support not enabled. Enable with --features mongodb".to_string(),
+                    ))
                 }
             }
         }
@@ -228,23 +267,29 @@ impl DatabaseManager {
     /// Run all pending migrations
     pub async fn run_migrations(&self) -> Result<(), DatabaseError> {
         // Create migrations table if it doesn't exist
-        self.connection.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
+        self.connection
+            .execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (
                 version BIGINT PRIMARY KEY,
                 description TEXT NOT NULL,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )",
-            vec![]
-        ).await?;
+                vec![],
+            )
+            .await?;
 
         // Get applied migrations
-        let applied_result = self.connection.query(
-            "SELECT version FROM schema_migrations ORDER BY version",
-            vec![]
-        ).await?;
+        let applied_result = self
+            .connection
+            .query(
+                "SELECT version FROM schema_migrations ORDER BY version",
+                vec![],
+            )
+            .await?;
 
         let applied_versions: std::collections::HashSet<i64> = match applied_result {
-            QueryResult::Query(rows) => rows.into_iter()
+            QueryResult::Query(rows) => rows
+                .into_iter()
                 .filter_map(|row| row.get("version").and_then(|v| v.as_i64()))
                 .collect(),
             _ => std::collections::HashSet::new(),
@@ -253,17 +298,23 @@ impl DatabaseManager {
         // Apply pending migrations
         for migration in &self.migrations {
             if !applied_versions.contains(&migration.version()) {
-                println!("Applying migration {}: {}", migration.version(), migration.description());
+                println!(
+                    "Applying migration {}: {}",
+                    migration.version(),
+                    migration.description()
+                );
                 migration.up(self.connection.as_ref()).await?;
 
                 // Record migration as applied
-                self.connection.execute(
-                    "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
-                    vec![
-                        serde_json::Value::Number(migration.version().into()),
-                        serde_json::Value::String(migration.description().to_string())
-                    ]
-                ).await?;
+                self.connection
+                    .execute(
+                        "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
+                        vec![
+                            serde_json::Value::Number(migration.version().into()),
+                            serde_json::Value::String(migration.description().to_string()),
+                        ],
+                    )
+                    .await?;
             }
         }
 
@@ -273,10 +324,13 @@ impl DatabaseManager {
     /// Rollback migrations
     pub async fn rollback_migrations(&self, steps: usize) -> Result<(), DatabaseError> {
         // Get applied migrations in reverse order
-        let applied_result = self.connection.query(
-            "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT ?",
-            vec![serde_json::Value::Number((steps as i64).into())]
-        ).await?;
+        let applied_result = self
+            .connection
+            .query(
+                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT ?",
+                vec![serde_json::Value::Number((steps as i64).into())],
+            )
+            .await?;
 
         let applied_rows = match applied_result {
             QueryResult::Query(rows) => rows,
@@ -289,14 +343,20 @@ impl DatabaseManager {
                     // Find and rollback migration
                     for migration in &self.migrations {
                         if migration.version() == version_i64 {
-                            println!("Rolling back migration {}: {}", version_i64, migration.description());
+                            println!(
+                                "Rolling back migration {}: {}",
+                                version_i64,
+                                migration.description()
+                            );
                             migration.down(self.connection.as_ref()).await?;
 
                             // Remove from migrations table
-                            self.connection.execute(
-                                "DELETE FROM schema_migrations WHERE version = ?",
-                                vec![serde_json::Value::Number(version_i64.into())]
-                            ).await?;
+                            self.connection
+                                .execute(
+                                    "DELETE FROM schema_migrations WHERE version = ?",
+                                    vec![serde_json::Value::Number(version_i64.into())],
+                                )
+                                .await?;
                             break;
                         }
                     }
@@ -314,7 +374,14 @@ impl DatabaseManager {
         let response_time = start.elapsed();
 
         // Get basic stats
-        let stats = match self.connection.query("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'", vec![]).await {
+        let stats = match self
+            .connection
+            .query(
+                "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'",
+                vec![],
+            )
+            .await
+        {
             Ok(QueryResult::Query(rows)) => {
                 if let Some(row) = rows.first() {
                     if let Some(serde_json::Value::Number(count)) = row.get("count") {
@@ -360,15 +427,27 @@ impl DatabaseManager {
 
 #[async_trait]
 impl DatabaseConnection for DatabaseManager {
-    async fn execute(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+    async fn execute(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
         self.connection.execute(query, params).await
     }
 
-    async fn query(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+    async fn query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
         self.connection.query(query, params).await
     }
 
-    async fn query_one(&self, query: &str, params: Vec<serde_json::Value>) -> Result<QueryResult, DatabaseError> {
+    async fn query_one(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
         self.connection.query_one(query, params).await
     }
 
@@ -478,7 +557,10 @@ impl QueryBuilder {
     }
 
     /// Build INSERT query
-    pub fn build_insert(&self, data: HashMap<&str, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
+    pub fn build_insert(
+        &self,
+        data: HashMap<&str, serde_json::Value>,
+    ) -> (String, Vec<serde_json::Value>) {
         let columns: Vec<String> = data.keys().map(|k| k.to_string()).collect();
         let placeholders: Vec<String> = (0..data.len()).map(|_| "?".to_string()).collect();
         let values: Vec<serde_json::Value> = data.values().cloned().collect();
@@ -494,7 +576,10 @@ impl QueryBuilder {
     }
 
     /// Build UPDATE query
-    pub fn build_update(&self, data: HashMap<&str, serde_json::Value>) -> (String, Vec<serde_json::Value>) {
+    pub fn build_update(
+        &self,
+        data: HashMap<&str, serde_json::Value>,
+    ) -> (String, Vec<serde_json::Value>) {
         let set_clause: Vec<String> = data.keys().map(|k| format!("{} = ?", k)).collect();
         let mut values: Vec<serde_json::Value> = data.values().cloned().collect();
 

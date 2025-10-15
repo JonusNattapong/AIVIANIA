@@ -1,11 +1,11 @@
+use crate::database::Database;
+use crate::request::AivianiaRequest;
+use crate::response::AivianiaResponse;
 use async_graphql::{Context, EmptySubscription, Object, Schema, SimpleObject, ID};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use hyper::{Body, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::request::AivianiaRequest;
-use crate::response::AivianiaResponse;
-use crate::database::Database;
 
 /// GraphQL configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -350,7 +350,11 @@ impl QueryRoot {
     }
 
     /// Get comments for a post
-    async fn comments(&self, ctx: &Context<'_>, post_id: ID) -> async_graphql::Result<Vec<GraphQLComment>> {
+    async fn comments(
+        &self,
+        ctx: &Context<'_>,
+        post_id: ID,
+    ) -> async_graphql::Result<Vec<GraphQLComment>> {
         let _context = ctx.data::<GraphQLContext>()?;
         // In a real implementation, fetch comments from database
         // For now, return mock comments
@@ -424,8 +428,12 @@ impl MutationRoot {
         // For now, return updated mock user
         Ok(GraphQLUser {
             id: id.clone(),
-            username: input.username.unwrap_or_else(|| format!("user_{}", id.as_str())),
-            email: input.email.unwrap_or_else(|| format!("user{}@example.com", id.as_str())),
+            username: input
+                .username
+                .unwrap_or_else(|| format!("user_{}", id.as_str())),
+            email: input
+                .email
+                .unwrap_or_else(|| format!("user{}@example.com", id.as_str())),
             full_name: input.full_name,
             created_at: chrono::Utc::now().to_rfc3339(),
             last_login: Some(chrono::Utc::now().to_rfc3339()),
@@ -440,7 +448,9 @@ impl MutationRoot {
         input: CreatePostInput,
     ) -> async_graphql::Result<GraphQLPost> {
         let context = ctx.data::<GraphQLContext>()?;
-        let author_id = context.current_user_id.as_ref()
+        let author_id = context
+            .current_user_id
+            .as_ref()
             .ok_or_else(|| async_graphql::Error::new("Authentication required"))?;
 
         // In a real implementation, create post in database
@@ -470,8 +480,12 @@ impl MutationRoot {
         // For now, return updated mock post
         Ok(GraphQLPost {
             id: id.clone(),
-            title: input.title.unwrap_or_else(|| format!("Updated Post {}", id.as_str())),
-            content: input.content.unwrap_or_else(|| format!("Updated content for post {}", id.as_str())),
+            title: input
+                .title
+                .unwrap_or_else(|| format!("Updated Post {}", id.as_str())),
+            content: input
+                .content
+                .unwrap_or_else(|| format!("Updated content for post {}", id.as_str())),
             author_id: ID("author_1".to_string()),
             author: None,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -496,7 +510,9 @@ impl MutationRoot {
         input: CreateCommentInput,
     ) -> async_graphql::Result<GraphQLComment> {
         let context = ctx.data::<GraphQLContext>()?;
-        let author_id = context.current_user_id.as_ref()
+        let author_id = context
+            .current_user_id
+            .as_ref()
             .ok_or_else(|| async_graphql::Error::new("Authentication required"))?;
 
         // In a real implementation, create comment in database
@@ -585,10 +601,21 @@ impl GraphQLMiddleware {
 
 #[async_trait::async_trait]
 impl crate::Middleware for GraphQLMiddleware {
-    fn before(&self, req: crate::Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<hyper::Request<hyper::Body>, hyper::Response<hyper::Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: crate::Request,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<hyper::Request<hyper::Body>, hyper::Response<hyper::Body>>,
+                > + Send
+                + '_,
+        >,
+    > {
         Box::pin(async move {
             // Extract session information for GraphQL context
-            let session_id = req.headers()
+            let session_id = req
+                .headers()
                 .get("authorization")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|auth| {
@@ -625,7 +652,7 @@ impl crate::Middleware for GraphQLMiddleware {
 pub async fn graphql_playground() -> AivianiaResponse {
     let html = async_graphql::http::playground_source(
         async_graphql::http::GraphQLPlaygroundConfig::new("/graphql")
-            .title("AIVIANIA GraphQL Playground")
+            .title("AIVIANIA GraphQL Playground"),
     );
     AivianiaResponse::new(StatusCode::OK)
         .header("content-type", "text/html")

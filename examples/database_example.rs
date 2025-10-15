@@ -3,9 +3,9 @@
 //! This example demonstrates how to use the AIVIANIA database integration
 //! with SQLite backend, including repository pattern and RBAC.
 
-use aiviania::database::{DatabaseConfig, DatabaseManager, DatabaseType, Repository};
-use aiviania::database::repositories::UserRepository;
 use aiviania::auth::rbac::RBACService;
+use aiviania::database::repositories::UserRepository;
+use aiviania::database::{DatabaseConfig, DatabaseManager, DatabaseType, Repository};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -46,7 +46,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     "#;
-    db_manager.connection().execute(create_table_query, vec![]).await?;
+    db_manager
+        .connection()
+        .execute(create_table_query, vec![])
+        .await?;
     println!("✅ Database schema created!");
 
     // 2. Create repository
@@ -96,7 +99,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // 6. Test RBAC
             println!("\n🔐 Testing RBAC...");
             let auth_user = user.to_auth_user();
-            let has_user_role = rbac_service.has_role(&auth_user, &aiviania::auth::models::Role::User);
+            let has_user_role =
+                rbac_service.has_role(&auth_user, &aiviania::auth::models::Role::User);
             println!("   User has 'User' role: {}", has_user_role);
         }
         None => println!("❌ User not found"),
@@ -116,7 +120,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         user_repo.update(user.clone()).await?;
         println!("✅ User updated successfully!");
-        println!("   New name: {} {}", user.first_name.unwrap_or_default(), user.last_name.unwrap_or_default());
+        println!(
+            "   New name: {} {}",
+            user.first_name.unwrap_or_default(),
+            user.last_name.unwrap_or_default()
+        );
     }
 
     // 9. Clean up - delete the user

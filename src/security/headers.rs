@@ -1,9 +1,9 @@
 //! Security Headers Middleware
 
-use super::{SecurityResult, SecurityMiddleware};
-use hyper::{Request, Response, Body};
-use hyper::header::{HeaderName, HeaderValue};
+use super::{SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
+use hyper::header::{HeaderName, HeaderValue};
+use hyper::{Body, Request, Response};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -33,8 +33,14 @@ impl Default for SecurityHeadersConfig {
         let mut custom_headers = HashMap::new();
         custom_headers.insert("X-Frame-Options".to_string(), "DENY".to_string());
         custom_headers.insert("X-Content-Type-Options".to_string(), "nosniff".to_string());
-        custom_headers.insert("Referrer-Policy".to_string(), "strict-origin-when-cross-origin".to_string());
-        custom_headers.insert("Permissions-Policy".to_string(), "geolocation=(), microphone=(), camera=()".to_string());
+        custom_headers.insert(
+            "Referrer-Policy".to_string(),
+            "strict-origin-when-cross-origin".to_string(),
+        );
+        custom_headers.insert(
+            "Permissions-Policy".to_string(),
+            "geolocation=(), microphone=(), camera=()".to_string(),
+        );
 
         Self {
             content_security_policy: Some("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'".to_string()),
@@ -71,37 +77,51 @@ impl SecurityHeadersMiddleware {
     pub fn add_security_headers(&self, response: &mut Response<Body>) {
         // Content Security Policy
         if let Some(csp) = &self.config.content_security_policy {
-            response.headers_mut().insert("Content-Security-Policy", csp.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("Content-Security-Policy", csp.parse().unwrap());
         }
 
         // X-Frame-Options
         if let Some(xfo) = &self.config.x_frame_options {
-            response.headers_mut().insert("X-Frame-Options", xfo.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("X-Frame-Options", xfo.parse().unwrap());
         }
 
         // X-Content-Type-Options
         if let Some(xcto) = &self.config.x_content_type_options {
-            response.headers_mut().insert("X-Content-Type-Options", xcto.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("X-Content-Type-Options", xcto.parse().unwrap());
         }
 
         // Referrer-Policy
         if let Some(rp) = &self.config.referrer_policy {
-            response.headers_mut().insert("Referrer-Policy", rp.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("Referrer-Policy", rp.parse().unwrap());
         }
 
         // Permissions-Policy
         if let Some(pp) = &self.config.permissions_policy {
-            response.headers_mut().insert("Permissions-Policy", pp.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("Permissions-Policy", pp.parse().unwrap());
         }
 
         // Strict-Transport-Security (only for HTTPS)
         if let Some(sts) = &self.config.strict_transport_security {
-            response.headers_mut().insert("Strict-Transport-Security", sts.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("Strict-Transport-Security", sts.parse().unwrap());
         }
 
         // X-XSS-Protection (deprecated but still used)
         if let Some(xxss) = &self.config.x_xss_protection {
-            response.headers_mut().insert("X-XSS-Protection", xxss.parse().unwrap());
+            response
+                .headers_mut()
+                .insert("X-XSS-Protection", xxss.parse().unwrap());
         }
 
         // Custom headers
@@ -216,9 +236,7 @@ impl CspBuilder {
     pub fn build(self) -> String {
         self.directives
             .into_iter()
-            .map(|(directive, sources)| {
-                format!("{} {}", directive, sources.join(" "))
-            })
+            .map(|(directive, sources)| format!("{} {}", directive, sources.join(" ")))
             .collect::<Vec<String>>()
             .join("; ")
     }
@@ -374,7 +392,9 @@ pub mod presets {
             .x_frame_options(Some("DENY".to_string()))
             .x_content_type_options(Some("nosniff".to_string()))
             .referrer_policy(Some("strict-origin-when-cross-origin".to_string()))
-            .permissions_policy(Some("geolocation=(), microphone=(), camera=(), payment=(), usb=()".to_string()))
+            .permissions_policy(Some(
+                "geolocation=(), microphone=(), camera=(), payment=(), usb=()".to_string(),
+            ))
             .strict_transport_security(Some("max-age=31536000; includeSubDomains".to_string()))
             .add_custom_header("X-API-Version".to_string(), "1.0".to_string())
             .build()

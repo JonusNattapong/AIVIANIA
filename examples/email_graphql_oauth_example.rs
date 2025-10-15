@@ -1,5 +1,34 @@
 use aiviania::*;
 use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Minimal example: initialize email service if available and run a tiny server
+    let config = AppConfig::from_env();
+
+    // If EmailService is available, create a simple instance; otherwise skip
+    #[allow(unused_variables)]
+    let _email = if cfg!(feature = "email") {
+        let ec = EmailConfig {
+            smtp_host: "smtp.example.com".to_string(),
+            smtp_port: 587,
+            smtp_username: "user".to_string(),
+            smtp_password: "pass".to_string(),
+            use_tls: false,
+            from_email: "noreply@example.com".to_string(),
+            from_name: "Example".to_string(),
+            templates_dir: "./templates".to_string(),
+        };
+        Some(Arc::new(EmailService::new(ec)?))
+    } else {
+        None
+    };
+
+    println!("Minimal email example - nothing to run interactively.");
+    Ok(())
+}
+use aiviania::*;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Example demonstrating Email, GraphQL, and OAuth integration
@@ -64,7 +93,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add middleware
     server.add_middleware(SessionMiddleware::new(session_manager.clone()));
     server.add_middleware(AuthMiddleware::new(auth_service.clone()));
-    server.add_middleware(GraphQLMiddleware::new(session_manager.clone(), database.clone()));
+    server.add_middleware(GraphQLMiddleware::new(
+        session_manager.clone(),
+        database.clone(),
+    ));
     server.add_middleware(OAuthMiddleware::new(
         oauth_service.clone(),
         session_manager.clone(),
@@ -72,10 +104,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Email routes
-    server.add_route(Route::post("/api/auth/register", register_with_email_handler));
+    server.add_route(Route::post(
+        "/api/auth/register",
+        register_with_email_handler,
+    ));
     server.add_route(Route::post("/api/auth/verify-email", verify_email_handler));
-    server.add_route(Route::post("/api/auth/forgot-password", forgot_password_handler));
-    server.add_route(Route::post("/api/auth/reset-password", reset_password_handler));
+    server.add_route(Route::post(
+        "/api/auth/forgot-password",
+        forgot_password_handler,
+    ));
+    server.add_route(Route::post(
+        "/api/auth/reset-password",
+        reset_password_handler,
+    ));
 
     // GraphQL routes
     server.add_route(Route::get("/graphql", graphql_playground_handler));
@@ -90,7 +131,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Store services in server state for handlers
     server.state.insert("email_service", email_service);
-    server.state.insert("email_verification", email_verification);
+    server
+        .state
+        .insert("email_verification", email_verification);
     server.state.insert("password_reset", password_reset);
     server.state.insert("graphql_service", graphql_service);
     server.state.insert("oauth_service", oauth_service);
@@ -111,7 +154,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Email handlers
 async fn register_with_email_handler(req: Request) -> Response {
     let email_service = req.state::<Arc<EmailService>>("email_service").unwrap();
-    let email_verification = req.state::<Arc<EmailVerificationService>>("email_verification").unwrap();
+    let email_verification = req
+        .state::<Arc<EmailVerificationService>>("email_verification")
+        .unwrap();
 
     #[derive(serde::Deserialize)]
     struct RegisterRequest {
@@ -126,7 +171,10 @@ async fn register_with_email_handler(req: Request) -> Response {
             let user_id = uuid::Uuid::new_v4().to_string();
 
             // Send verification email
-            match email_verification.send_verification(&register_req.email, &user_id).await {
+            match email_verification
+                .send_verification(&register_req.email, &user_id)
+                .await
+            {
                 Ok(token) => {
                     let response = serde_json::json!({
                         "success": true,
@@ -139,20 +187,18 @@ async fn register_with_email_handler(req: Request) -> Response {
                         .with_header("content-type", "application/json")
                         .with_body(response.to_string())
                 }
-                Err(e) => {
-                    Response::new(500)
-                        .with_body(format!("Failed to send verification email: {}", e))
-                }
+                Err(e) => Response::new(500)
+                    .with_body(format!("Failed to send verification email: {}", e)),
             }
         }
-        Err(_) => {
-            Response::new(400).with_body("Invalid request body")
-        }
+        Err(_) => Response::new(400).with_body("Invalid request body"),
     }
 }
 
 async fn verify_email_handler(req: Request) -> Response {
-    let email_verification = req.state::<Arc<EmailVerificationService>>("email_verification").unwrap();
+    let email_verification = req
+        .state::<Arc<EmailVerificationService>>("email_verification")
+        .unwrap();
 
     #[derive(serde::Deserialize)]
     struct VerifyRequest {
@@ -175,20 +221,17 @@ async fn verify_email_handler(req: Request) -> Response {
                         .with_header("content-type", "application/json")
                         .with_body(response.to_string())
                 }
-                Err(e) => {
-                    Response::new(400)
-                        .with_body(format!("Verification failed: {}", e))
-                }
+                Err(e) => Response::new(400).with_body(format!("Verification failed: {}", e)),
             }
         }
-        Err(_) => {
-            Response::new(400).with_body("Invalid request body")
-        }
+        Err(_) => Response::new(400).with_body("Invalid request body"),
     }
 }
 
 async fn forgot_password_handler(req: Request) -> Response {
-    let password_reset = req.state::<Arc<PasswordResetService>>("password_reset").unwrap();
+    let password_reset = req
+        .state::<Arc<PasswordResetService>>("password_reset")
+        .unwrap();
 
     #[derive(serde::Deserialize)]
     struct ForgotRequest {
@@ -200,7 +243,10 @@ async fn forgot_password_handler(req: Request) -> Response {
             // In a real app, you'd look up the user by email first
             let user_id = "user_id_from_database";
 
-            match password_reset.send_reset_email(&forgot_req.email, user_id).await {
+            match password_reset
+                .send_reset_email(&forgot_req.email, user_id)
+                .await
+            {
                 Ok(token) => {
                     let response = serde_json::json!({
                         "success": true,
@@ -213,19 +259,18 @@ async fn forgot_password_handler(req: Request) -> Response {
                         .with_body(response.to_string())
                 }
                 Err(e) => {
-                    Response::new(500)
-                        .with_body(format!("Failed to send reset email: {}", e))
+                    Response::new(500).with_body(format!("Failed to send reset email: {}", e))
                 }
             }
         }
-        Err(_) => {
-            Response::new(400).with_body("Invalid request body")
-        }
+        Err(_) => Response::new(400).with_body("Invalid request body"),
     }
 }
 
 async fn reset_password_handler(req: Request) -> Response {
-    let password_reset = req.state::<Arc<PasswordResetService>>("password_reset").unwrap();
+    let password_reset = req
+        .state::<Arc<PasswordResetService>>("password_reset")
+        .unwrap();
 
     #[derive(serde::Deserialize)]
     struct ResetRequest {
@@ -249,15 +294,10 @@ async fn reset_password_handler(req: Request) -> Response {
                         .with_header("content-type", "application/json")
                         .with_body(response.to_string())
                 }
-                Err(e) => {
-                    Response::new(400)
-                        .with_body(format!("Password reset failed: {}", e))
-                }
+                Err(e) => Response::new(400).with_body(format!("Password reset failed: {}", e)),
             }
         }
-        Err(_) => {
-            Response::new(400).with_body("Invalid request body")
-        }
+        Err(_) => Response::new(400).with_body("Invalid request body"),
     }
 }
 
@@ -265,7 +305,7 @@ async fn reset_password_handler(req: Request) -> Response {
 async fn graphql_playground_handler(_req: Request) -> Response {
     let html = async_graphql::http::playground_source(
         async_graphql::http::GraphQLPlaygroundConfig::new("/graphql")
-            .title("AIVIANIA GraphQL Playground")
+            .title("AIVIANIA GraphQL Playground"),
     );
     Response::new(200)
         .with_header("content-type", "text/html")
@@ -278,7 +318,8 @@ async fn graphql_endpoint_handler(req: Request) -> Response {
     let database = req.state::<Arc<Database>>("database").unwrap();
 
     // Extract user ID from session (simplified)
-    let current_user_id = req.headers()
+    let current_user_id = req
+        .headers()
         .get("authorization")
         .and_then(|h| h.to_str().ok())
         .and_then(|auth| {
@@ -289,22 +330,16 @@ async fn graphql_endpoint_handler(req: Request) -> Response {
             }
         });
 
-    let context = GraphQLContext::new(
-        current_user_id,
-        database.clone(),
-        session_manager.clone(),
-    );
+    let context = GraphQLContext::new(current_user_id, database.clone(), session_manager.clone());
 
     match async_graphql_axum::GraphQLRequest::from(req).await {
         Ok(graphql_req) => {
             let response = graphql_service.execute(graphql_req, context).await;
             response.into_response()
         }
-        Err(err) => {
-            Response::new(400)
-                .with_header("content-type", "application/json")
-                .with_body(format!("{{\"error\": \"{}\"}}", err))
-        }
+        Err(err) => Response::new(400)
+            .with_header("content-type", "application/json")
+            .with_body(format!("{{\"error\": \"{}\"}}", err)),
     }
 }
 
@@ -320,14 +355,8 @@ async fn oauth_login_handler(req: Request) -> Response {
     let provider = path_segments[2]; // /auth/{provider}
 
     match oauth_service.get_authorization_url(provider).await {
-        Ok((url, _state)) => {
-            Response::new(302)
-                .with_header("location", url.to_string())
-        }
-        Err(e) => {
-            Response::new(400)
-                .with_body(format!("OAuth login failed: {}", e))
-        }
+        Ok((url, _state)) => Response::new(302).with_header("location", url.to_string()),
+        Err(e) => Response::new(400).with_body(format!("OAuth login failed: {}", e)),
     }
 }
 
@@ -343,9 +372,10 @@ async fn oauth_callback_handler(req: Request) -> Response {
 
     // Extract query parameters
     let query = req.uri().query().unwrap_or("");
-    let params: std::collections::HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-        .into_owned()
-        .collect();
+    let params: std::collections::HashMap<String, String> =
+        url::form_urlencoded::parse(query.as_bytes())
+            .into_owned()
+            .collect();
 
     let code = match params.get("code") {
         Some(code) => code,
@@ -376,23 +406,18 @@ async fn oauth_callback_handler(req: Request) -> Response {
                         .with_header("content-type", "application/json")
                         .with_body(response_data.to_string())
                 }
-                Err(e) => {
-                    Response::new(500)
-                        .with_body(format!("Failed to get user info: {}", e))
-                }
+                Err(e) => Response::new(500).with_body(format!("Failed to get user info: {}", e)),
             }
         }
-        Err(e) => {
-            Response::new(400)
-                .with_body(format!("OAuth exchange failed: {}", e))
-        }
+        Err(e) => Response::new(400).with_body(format!("OAuth exchange failed: {}", e)),
     }
 }
 
 async fn oauth_providers_handler(req: Request) -> Response {
     let oauth_service = req.state::<Arc<OAuthService>>("oauth_service").unwrap();
 
-    let providers: Vec<serde_json::Value> = oauth_service.get_providers()
+    let providers: Vec<serde_json::Value> = oauth_service
+        .get_providers()
         .into_iter()
         .map(|name| {
             serde_json::json!({

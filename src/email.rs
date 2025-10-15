@@ -1,6 +1,6 @@
+use handlebars::Handlebars;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
-use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,10 +66,7 @@ pub struct EmailService {
 impl EmailService {
     /// Create a new email service
     pub fn new(config: EmailConfig) -> Result<Self, EmailError> {
-        let creds = Credentials::new(
-            config.smtp_username.clone(),
-            config.smtp_password.clone(),
-        );
+        let creds = Credentials::new(config.smtp_username.clone(), config.smtp_password.clone());
 
         let mailer = if config.use_tls {
             SmtpTransport::relay(&config.smtp_host)
@@ -86,11 +83,20 @@ impl EmailService {
         templates.set_strict_mode(true);
 
         // Register default templates
-        templates.register_template_string("verification", include_str!("../templates/verification.html"))
+        templates
+            .register_template_string(
+                "verification",
+                include_str!("../templates/verification.html"),
+            )
             .map_err(|e| EmailError::Template(e.to_string()))?;
-        templates.register_template_string("password_reset", include_str!("../templates/password_reset.html"))
+        templates
+            .register_template_string(
+                "password_reset",
+                include_str!("../templates/password_reset.html"),
+            )
             .map_err(|e| EmailError::Template(e.to_string()))?;
-        templates.register_template_string("welcome", include_str!("../templates/welcome.html"))
+        templates
+            .register_template_string("welcome", include_str!("../templates/welcome.html"))
             .map_err(|e| EmailError::Template(e.to_string()))?;
 
         Ok(Self {
@@ -119,7 +125,8 @@ impl EmailService {
             &format!("{} - Verify Your Email", self.config.from_name),
             "verification",
             &data,
-        ).await
+        )
+        .await
     }
 
     /// Send a password reset email
@@ -129,7 +136,10 @@ impl EmailService {
         to_name: &str,
         reset_token: &str,
     ) -> Result<(), EmailError> {
-        let reset_url = format!("{}/reset-password?token={}", "https://yourapp.com", reset_token);
+        let reset_url = format!(
+            "{}/reset-password?token={}",
+            "https://yourapp.com", reset_token
+        );
 
         let data = EmailTemplateData {
             name: to_name.to_string(),
@@ -143,7 +153,8 @@ impl EmailService {
             &format!("{} - Reset Your Password", self.config.from_name),
             "password_reset",
             &data,
-        ).await
+        )
+        .await
     }
 
     /// Send a welcome email
@@ -164,7 +175,8 @@ impl EmailService {
             &format!("Welcome to {}!", self.config.from_name),
             "welcome",
             &data,
-        ).await
+        )
+        .await
     }
 
     /// Send a custom email using template
@@ -176,19 +188,27 @@ impl EmailService {
         data: &EmailTemplateData,
     ) -> Result<(), EmailError> {
         let templates = self.templates.read().await;
-        let html_body = templates.render(template_name, data)
+        let html_body = templates
+            .render(template_name, data)
             .map_err(|e| EmailError::Template(e.to_string()))?;
 
         let email = Message::builder()
-            .from(format!("{} <{}>", self.config.from_name, self.config.from_email).parse()
-                .map_err(|e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()))?)
-            .to(format!("{} <{}>", data.name, to_email).parse()
-                .map_err(|e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()))?)
+            .from(
+                format!("{} <{}>", self.config.from_name, self.config.from_email)
+                    .parse()
+                    .map_err(|e: lettre::address::AddressError| {
+                        EmailError::MessageFormat(e.to_string())
+                    })?,
+            )
+            .to(format!("{} <{}>", data.name, to_email).parse().map_err(
+                |e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()),
+            )?)
             .subject(subject)
             .body(html_body)
             .map_err(|e| EmailError::MessageFormat(e.to_string()))?;
 
-        self.mailer.send(&email)
+        self.mailer
+            .send(&email)
             .map_err(|e| EmailError::SendFailed(e.to_string()))?;
 
         Ok(())
@@ -203,15 +223,22 @@ impl EmailService {
         body: &str,
     ) -> Result<(), EmailError> {
         let email = Message::builder()
-            .from(format!("{} <{}>", self.config.from_name, self.config.from_email).parse()
-                .map_err(|e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()))?)
-            .to(format!("{} <{}>", to_name, to_email).parse()
-                .map_err(|e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()))?)
+            .from(
+                format!("{} <{}>", self.config.from_name, self.config.from_email)
+                    .parse()
+                    .map_err(|e: lettre::address::AddressError| {
+                        EmailError::MessageFormat(e.to_string())
+                    })?,
+            )
+            .to(format!("{} <{}>", to_name, to_email).parse().map_err(
+                |e: lettre::address::AddressError| EmailError::MessageFormat(e.to_string()),
+            )?)
             .subject(subject)
             .body(body.to_string())
             .map_err(|e| EmailError::MessageFormat(e.to_string()))?;
 
-        self.mailer.send(&email)
+        self.mailer
+            .send(&email)
             .map_err(|e| EmailError::SendFailed(e.to_string()))?;
 
         Ok(())
@@ -220,7 +247,8 @@ impl EmailService {
     /// Register a custom email template
     pub async fn register_template(&self, name: &str, template: &str) -> Result<(), EmailError> {
         let mut templates = self.templates.write().await;
-        templates.register_template_string(name, template)
+        templates
+            .register_template_string(name, template)
             .map_err(|e| EmailError::Template(e.to_string()))?;
         Ok(())
     }
@@ -228,7 +256,9 @@ impl EmailService {
     /// Test email connection
     pub fn test_connection(&self) -> Result<(), EmailError> {
         // Try to establish connection
-        let _ = self.mailer.test_connection()
+        let _ = self
+            .mailer
+            .test_connection()
             .map_err(|e| EmailError::ConnectionFailed(e.to_string()))?;
         Ok(())
     }
@@ -273,7 +303,11 @@ impl EmailVerificationService {
     }
 
     /// Send verification email and store token
-    pub async fn send_verification(&self, email: &str, user_id: &str) -> Result<String, EmailError> {
+    pub async fn send_verification(
+        &self,
+        email: &str,
+        user_id: &str,
+    ) -> Result<String, EmailError> {
         let token = uuid::Uuid::new_v4().to_string();
         let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
 
@@ -288,7 +322,9 @@ impl EmailVerificationService {
             tokens.insert(token.clone(), verification_data);
         }
 
-        self.email_service.send_verification_email(email, "User", &token).await?;
+        self.email_service
+            .send_verification_email(email, "User", &token)
+            .await?;
 
         Ok(token)
     }
@@ -352,7 +388,9 @@ impl PasswordResetService {
             tokens.insert(token.clone(), reset_data);
         }
 
-        self.email_service.send_password_reset_email(email, "User", &token).await?;
+        self.email_service
+            .send_password_reset_email(email, "User", &token)
+            .await?;
 
         Ok(token)
     }

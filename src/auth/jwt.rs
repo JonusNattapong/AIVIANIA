@@ -93,7 +93,14 @@ impl JwtService {
     }
 
     /// Create an access token for a user
-    pub fn create_access_token(&self, user_id: &str, username: &str, email: &str, roles: &[String], permissions: &[String]) -> Result<String, JwtError> {
+    pub fn create_access_token(
+        &self,
+        user_id: &str,
+        username: &str,
+        email: &str,
+        roles: &[String],
+        permissions: &[String],
+    ) -> Result<String, JwtError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| JwtError::TokenCreationError(e.to_string()))?
@@ -145,11 +152,12 @@ impl JwtService {
         validation.set_audience(&[&self.config.audience]);
         validation.validate_exp = true; // Explicitly enable expiration validation
 
-        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
-            .map_err(|e| match e.kind() {
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation).map_err(|e| {
+            match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => JwtError::TokenExpired,
                 _ => JwtError::TokenValidationError(e.to_string()),
-            })?;
+            }
+        })?;
 
         Ok(token_data.claims)
     }
@@ -169,7 +177,15 @@ impl JwtService {
     }
 
     /// Refresh an access token using a refresh token
-    pub fn refresh_access_token(&self, refresh_token: &str, user_id: &str, username: &str, email: &str, roles: &[String], permissions: &[String]) -> Result<String, JwtError> {
+    pub fn refresh_access_token(
+        &self,
+        refresh_token: &str,
+        user_id: &str,
+        username: &str,
+        email: &str,
+        roles: &[String],
+        permissions: &[String],
+    ) -> Result<String, JwtError> {
         // Validate refresh token
         let refresh_claims = self.validate_token(refresh_token)?;
 
@@ -208,7 +224,9 @@ mod tests {
         let permissions = vec!["read".to_string()];
 
         // Create access token
-        let token = service.create_access_token(user_id, username, email, &roles, &permissions).unwrap();
+        let token = service
+            .create_access_token(user_id, username, email, &roles, &permissions)
+            .unwrap();
         assert!(!token.is_empty());
 
         // Validate token
@@ -238,14 +256,16 @@ mod tests {
         // Use refresh token to create new access token
         let roles = vec!["user".to_string()];
         let permissions = vec!["read".to_string()];
-        let new_access_token = service.refresh_access_token(
-            &refresh_token,
-            user_id,
-            "testuser",
-            "test@example.com",
-            &roles,
-            &permissions,
-        ).unwrap();
+        let new_access_token = service
+            .refresh_access_token(
+                &refresh_token,
+                user_id,
+                "testuser",
+                "test@example.com",
+                &roles,
+                &permissions,
+            )
+            .unwrap();
 
         // Validate new access token
         let new_claims = service.validate_token(&new_access_token).unwrap();
@@ -281,6 +301,9 @@ mod tests {
 
         // Token should be expired
         assert!(service.is_token_expired(&token));
-        assert!(matches!(service.validate_token(&token), Err(JwtError::TokenExpired)));
+        assert!(matches!(
+            service.validate_token(&token),
+            Err(JwtError::TokenExpired)
+        ));
     }
 }

@@ -1,6 +1,6 @@
-use aiviania::*;
 use aiviania::plugin::PluginManager;
-use hyper::{Request, Body, StatusCode};
+use aiviania::*;
+use hyper::{Body, Request, StatusCode};
 use std::sync::Arc;
 use tokio;
 
@@ -79,43 +79,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }));
 
     // File list endpoint
-    router.add_route(Route::new("GET", "/files", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // List uploaded files
-        let upload_dir = std::path::PathBuf::from("./uploads");
+    router.add_route(Route::new(
+        "GET",
+        "/files",
+        |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // List uploaded files
+            let upload_dir = std::path::PathBuf::from("./uploads");
 
-        let mut files = Vec::new();
-        if upload_dir.exists() {
-            if let Ok(mut entries) = tokio::fs::read_dir(&upload_dir).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    if let Ok(metadata) = entry.metadata().await {
-                        if metadata.is_file() {
-                            files.push(serde_json::json!({
-                                "name": entry.file_name().to_string_lossy(),
-                                "size": metadata.len(),
-                                "modified": metadata.modified()
-                                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs()
-                            }));
+            let mut files = Vec::new();
+            if upload_dir.exists() {
+                if let Ok(mut entries) = tokio::fs::read_dir(&upload_dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        if let Ok(metadata) = entry.metadata().await {
+                            if metadata.is_file() {
+                                files.push(serde_json::json!({
+                                    "name": entry.file_name().to_string_lossy(),
+                                    "size": metadata.len(),
+                                    "modified": metadata.modified()
+                                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs()
+                                }));
+                            }
                         }
                     }
                 }
             }
-        }
 
-        let response = serde_json::json!({
-            "files": files,
-            "count": files.len()
-        });
+            let response = serde_json::json!({
+                "files": files,
+                "count": files.len()
+            });
 
-        Response::new(StatusCode::OK)
-            .body(Body::from(serde_json::to_string(&response).unwrap()))
-    }));
+            Response::new(StatusCode::OK)
+                .body(Body::from(serde_json::to_string(&response).unwrap()))
+        },
+    ));
 
     // Create server
-    let server = AivianiaServer::new(router)
-        .with_middleware(upload_middleware);
+    let server = AivianiaServer::new(router).with_middleware(upload_middleware);
 
     println!("🚀 File Upload Server starting on http://localhost:3000");
     println!("📁 Upload directory: ./uploads");

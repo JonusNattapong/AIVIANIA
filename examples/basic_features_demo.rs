@@ -6,7 +6,7 @@
 //! - OpenAPI/Swagger documentation generation
 
 use aiviania::*;
-use hyper::{Request, Body, Response, StatusCode};
+use hyper::{Body, Request, Response, StatusCode};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -34,41 +34,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     println!("🚀 Starting AIVIANIA Advanced Features Demo");
-    println!("📊 WebSocket: ws://localhost:{}/ws", config.server_addr().split(':').nth(1).unwrap_or("3000"));
-    println!("📚 API Docs: http://localhost:{}/swagger-ui/", config.server_addr());
+    println!(
+        "📊 WebSocket: ws://localhost:{}/ws",
+        config.server_addr().split(':').nth(1).unwrap_or("3000")
+    );
+    println!(
+        "📚 API Docs: http://localhost:{}/swagger-ui/",
+        config.server_addr()
+    );
     println!("🔒 Rate Limiting: 100 requests per minute per IP");
 
     // Create router
     let mut router = Router::new();
 
     // Health check endpoint
-    router.add_route(Route::new("GET", "/health", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        Response::new(StatusCode::OK).json(&HealthResponse {
-            status: "healthy".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            websocket_enabled: true,
-            rate_limiting_enabled: true,
-            openapi_enabled: true,
-        })
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/health",
+        |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            Response::new(StatusCode::OK).json(&HealthResponse {
+                status: "healthy".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                websocket_enabled: true,
+                rate_limiting_enabled: true,
+                openapi_enabled: true,
+            })
+        },
+    ));
 
     // Rate limited demo endpoint
-    router.add_route(Route::new("GET", "/api/demo", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        Response::new(StatusCode::OK).json(&ApiResponse {
-            message: "This endpoint is rate limited to 100 requests per minute per IP".to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        })
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/api/demo",
+        |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            Response::new(StatusCode::OK).json(&ApiResponse {
+                message: "This endpoint is rate limited to 100 requests per minute per IP"
+                    .to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+    ));
 
     // WebSocket endpoint (simplified - would need WebSocketPlugin)
-    router.add_route(Route::new("GET", "/ws", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // In a real implementation, this would handle WebSocket upgrade
-        Response::new(StatusCode::OK).json(&serde_json::json!({
-            "message": "WebSocket endpoint - use a WebSocket client to connect",
-            "features": ["room-based messaging", "JSON protocols", "user management"],
-            "example_message": "{\"type\": \"join\", \"room\": \"chat_room_1\"}"
-        }))
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/ws",
+        |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // In a real implementation, this would handle WebSocket upgrade
+            Response::new(StatusCode::OK).json(&serde_json::json!({
+                "message": "WebSocket endpoint - use a WebSocket client to connect",
+                "features": ["room-based messaging", "JSON protocols", "user management"],
+                "example_message": "{\"type\": \"join\", \"room\": \"chat_room_1\"}"
+            }))
+        },
+    ));
 
     // API Documentation endpoint (simplified)
     router.add_route(Route::new("GET", "/api-docs", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {

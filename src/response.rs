@@ -2,7 +2,7 @@
 //!
 //! This module provides Response helpers for JSON, HTML, and custom responses.
 
-use hyper::{Response, Body, StatusCode};
+use hyper::{Body, Response, StatusCode};
 use serde::Serialize;
 
 /// Response wrapper with helpers.
@@ -31,14 +31,16 @@ impl AivianiaResponse {
     /// Set JSON response.
     pub fn json<T: Serialize>(mut self, data: &T) -> Self {
         let json = serde_json::to_string(data).unwrap_or_else(|_| "{}".to_string());
-        self.headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        self.headers
+            .push(("Content-Type".to_string(), "application/json".to_string()));
         self.body = Body::from(json);
         self
     }
 
     /// Set HTML response.
     pub fn html(mut self, html: &str) -> Self {
-        self.headers.push(("Content-Type".to_string(), "text/html".to_string()));
+        self.headers
+            .push(("Content-Type".to_string(), "text/html".to_string()));
         self.body = Body::from(html.to_string());
         self
     }
@@ -77,29 +79,41 @@ mod tests {
     fn test_json_response() {
         let data = json!({"message": "hello", "status": "success"});
         let resp = AivianiaResponse::new(StatusCode::OK).json(&data);
-        
+
         assert_eq!(resp.status, StatusCode::OK);
         assert_eq!(resp.headers.len(), 1);
-        assert_eq!(resp.headers[0], ("Content-Type".to_string(), "application/json".to_string()));
-        
+        assert_eq!(
+            resp.headers[0],
+            ("Content-Type".to_string(), "application/json".to_string())
+        );
+
         // Convert to hyper response and check body
         let hyper_resp: Response<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
-        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "application/json");
+        assert_eq!(
+            hyper_resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
     }
 
     #[test]
     fn test_html_response() {
         let html = "<h1>Hello World</h1>";
         let resp = AivianiaResponse::new(StatusCode::OK).html(html);
-        
+
         assert_eq!(resp.status, StatusCode::OK);
         assert_eq!(resp.headers.len(), 1);
-        assert_eq!(resp.headers[0], ("Content-Type".to_string(), "text/html".to_string()));
-        
+        assert_eq!(
+            resp.headers[0],
+            ("Content-Type".to_string(), "text/html".to_string())
+        );
+
         let hyper_resp: Response<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
-        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "text/html");
+        assert_eq!(
+            hyper_resp.headers().get("content-type").unwrap(),
+            "text/html"
+        );
     }
 
     #[test]
@@ -107,18 +121,21 @@ mod tests {
         let resp = AivianiaResponse::new(StatusCode::OK)
             .header("X-Custom", "value")
             .header("Authorization", "Bearer token");
-        
+
         assert_eq!(resp.headers.len(), 2);
-        assert!(resp.headers.contains(&("X-Custom".to_string(), "value".to_string())));
-        assert!(resp.headers.contains(&("Authorization".to_string(), "Bearer token".to_string())));
+        assert!(resp
+            .headers
+            .contains(&("X-Custom".to_string(), "value".to_string())));
+        assert!(resp
+            .headers
+            .contains(&("Authorization".to_string(), "Bearer token".to_string())));
     }
 
     #[test]
     fn test_body_method() {
         let body_content = "Custom body content";
-        let resp = AivianiaResponse::new(StatusCode::OK)
-            .body(Body::from(body_content));
-        
+        let resp = AivianiaResponse::new(StatusCode::OK).body(Body::from(body_content));
+
         let hyper_resp: Response<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
     }
@@ -128,10 +145,13 @@ mod tests {
         let resp = AivianiaResponse::new(StatusCode::NOT_FOUND)
             .header("X-Error", "Not Found")
             .json(&json!({"error": "Resource not found"}));
-        
+
         let hyper_resp: Response<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::NOT_FOUND);
         assert_eq!(hyper_resp.headers().get("x-error").unwrap(), "Not Found");
-        assert_eq!(hyper_resp.headers().get("content-type").unwrap(), "application/json");
+        assert_eq!(
+            hyper_resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
     }
 }

@@ -1,16 +1,16 @@
+use crate::database::Database;
+use hyper::{Body, Request, Response, StatusCode};
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, ClientId, ClientSecret,
-    CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, reqwest::async_http_client, AuthUrl, ClientId, ClientSecret, CsrfToken,
+    RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use url::Url;
-use hyper::{Body, Request, Response, StatusCode};
-use crate::database::Database;
-use std::pin::Pin;
-use std::future::Future;
 
 /// OAuth provider configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -49,28 +49,38 @@ impl Default for OAuthConfig {
         let mut providers = HashMap::new();
 
         // Google OAuth provider
-        providers.insert("google".to_string(), OAuthProvider {
-            name: "google".to_string(),
-            client_id: "".to_string(),
-            client_secret: "".to_string(),
-            auth_url: "https://accounts.google.com/o/oauth2/auth".to_string(),
-            token_url: "https://oauth2.googleapis.com/token".to_string(),
-            user_info_url: "https://www.googleapis.com/oauth2/v2/userinfo".to_string(),
-            scopes: vec!["openid".to_string(), "email".to_string(), "profile".to_string()],
-            redirect_url: "http://localhost:3000/auth/google/callback".to_string(),
-        });
+        providers.insert(
+            "google".to_string(),
+            OAuthProvider {
+                name: "google".to_string(),
+                client_id: "".to_string(),
+                client_secret: "".to_string(),
+                auth_url: "https://accounts.google.com/o/oauth2/auth".to_string(),
+                token_url: "https://oauth2.googleapis.com/token".to_string(),
+                user_info_url: "https://www.googleapis.com/oauth2/v2/userinfo".to_string(),
+                scopes: vec![
+                    "openid".to_string(),
+                    "email".to_string(),
+                    "profile".to_string(),
+                ],
+                redirect_url: "http://localhost:3000/auth/google/callback".to_string(),
+            },
+        );
 
         // GitHub OAuth provider
-        providers.insert("github".to_string(), OAuthProvider {
-            name: "github".to_string(),
-            client_id: "".to_string(),
-            client_secret: "".to_string(),
-            auth_url: "https://github.com/login/oauth/authorize".to_string(),
-            token_url: "https://github.com/login/oauth/access_token".to_string(),
-            user_info_url: "https://api.github.com/user".to_string(),
-            scopes: vec!["user:email".to_string(), "read:user".to_string()],
-            redirect_url: "http://localhost:3000/auth/github/callback".to_string(),
-        });
+        providers.insert(
+            "github".to_string(),
+            OAuthProvider {
+                name: "github".to_string(),
+                client_id: "".to_string(),
+                client_secret: "".to_string(),
+                auth_url: "https://github.com/login/oauth/authorize".to_string(),
+                token_url: "https://github.com/login/oauth/access_token".to_string(),
+                user_info_url: "https://api.github.com/user".to_string(),
+                scopes: vec!["user:email".to_string(), "read:user".to_string()],
+                redirect_url: "http://localhost:3000/auth/github/callback".to_string(),
+            },
+        );
 
         Self {
             providers,
@@ -158,10 +168,15 @@ impl OAuthService {
 
     /// Get authorization URL for a provider
     pub async fn get_authorization_url(&self, provider: &str) -> Result<(Url, String), OAuthError> {
-        let client = self.clients.get(provider)
+        let client = self
+            .clients
+            .get(provider)
             .ok_or_else(|| OAuthError::ProviderNotFound(provider.to_string()))?;
 
-        let provider_config = self.config.providers.get(provider)
+        let provider_config = self
+            .config
+            .providers
+            .get(provider)
             .ok_or_else(|| OAuthError::ProviderNotFound(provider.to_string()))?;
 
         // Generate state for CSRF protection
@@ -172,7 +187,8 @@ impl OAuthService {
         let oauth_state = OAuthState {
             state: state_string.clone(),
             provider: provider.to_string(),
-            expires_at: chrono::Utc::now() + chrono::Duration::seconds(self.config.state_ttl_seconds as i64),
+            expires_at: chrono::Utc::now()
+                + chrono::Duration::seconds(self.config.state_ttl_seconds as i64),
         };
 
         {
@@ -192,11 +208,18 @@ impl OAuthService {
     }
 
     /// Exchange authorization code for tokens
-    pub async fn exchange_code(&self, provider: &str, code: &str, state: &str) -> Result<OAuthTokens, OAuthError> {
+    pub async fn exchange_code(
+        &self,
+        provider: &str,
+        code: &str,
+        state: &str,
+    ) -> Result<OAuthTokens, OAuthError> {
         // Verify state
         self.verify_state(state, provider).await?;
 
-        let client = self.clients.get(provider)
+        let client = self
+            .clients
+            .get(provider)
             .ok_or_else(|| OAuthError::ProviderNotFound(provider.to_string()))?;
 
         let token_result = client
@@ -209,7 +232,8 @@ impl OAuthService {
             refresh_token: token_result.refresh_token().map(|t| t.secret().clone()),
             token_type: token_result.token_type().as_ref().to_string(),
             expires_in: token_result.expires_in().map(|d| d.as_secs()),
-            scopes: token_result.scopes()
+            scopes: token_result
+                .scopes()
                 .map(|scopes| scopes.iter().map(|s| s.to_string()).collect())
                 .unwrap_or_default(),
         };
@@ -218,8 +242,15 @@ impl OAuthService {
     }
 
     /// Get user information from provider
-    pub async fn get_user_info(&self, provider: &str, tokens: &OAuthTokens) -> Result<OAuthUser, OAuthError> {
-        let provider_config = self.config.providers.get(provider)
+    pub async fn get_user_info(
+        &self,
+        provider: &str,
+        tokens: &OAuthTokens,
+    ) -> Result<OAuthUser, OAuthError> {
+        let provider_config = self
+            .config
+            .providers
+            .get(provider)
             .ok_or_else(|| OAuthError::ProviderNotFound(provider.to_string()))?;
 
         let client = reqwest::Client::new();
@@ -231,7 +262,9 @@ impl OAuthService {
             .await?;
 
         if !response.status().is_success() {
-            return Err(OAuthError::UserInfoRequestFailed(response.status().to_string()));
+            return Err(OAuthError::UserInfoRequestFailed(
+                response.status().to_string(),
+            ));
         }
 
         let user_data: serde_json::Value = response.json().await?;
@@ -300,14 +333,24 @@ impl OAuthService {
     }
 
     /// Parse generic OAuth user data
-    fn parse_generic_user(&self, provider: &str, data: serde_json::Value) -> Result<OAuthUser, OAuthError> {
+    fn parse_generic_user(
+        &self,
+        provider: &str,
+        data: serde_json::Value,
+    ) -> Result<OAuthUser, OAuthError> {
         let user = OAuthUser {
             provider: provider.to_string(),
             provider_id: data["id"].as_str().unwrap_or("").to_string(),
             email: data["email"].as_str().unwrap_or("").to_string(),
-            username: data["username"].as_str().or(data["name"].as_str()).map(|s| s.to_string()),
+            username: data["username"]
+                .as_str()
+                .or(data["name"].as_str())
+                .map(|s| s.to_string()),
             full_name: data["name"].as_str().map(|s| s.to_string()),
-            avatar_url: data["avatar_url"].as_str().or(data["picture"].as_str()).map(|s| s.to_string()),
+            avatar_url: data["avatar_url"]
+                .as_str()
+                .or(data["picture"].as_str())
+                .map(|s| s.to_string()),
             raw_data: data,
         };
         Ok(user)
@@ -327,9 +370,9 @@ impl OAuthService {
 
     /// Check if provider is configured
     pub fn is_provider_configured(&self, provider: &str) -> bool {
-        self.config.providers.contains_key(provider) &&
-        !self.config.providers[provider].client_id.is_empty() &&
-        !self.config.providers[provider].client_secret.is_empty()
+        self.config.providers.contains_key(provider)
+            && !self.config.providers[provider].client_id.is_empty()
+            && !self.config.providers[provider].client_secret.is_empty()
     }
 }
 
@@ -343,7 +386,13 @@ pub enum OAuthError {
     #[error("OAuth URL construction error: {0}")]
     UrlError(#[from] oauth2::url::ParseError),
     #[error("OAuth request error: {0}")]
-    RequestError(#[from] oauth2::RequestTokenError<oauth2::reqwest::Error<reqwest::Error>, oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>>),
+    RequestError(
+        #[from]
+        oauth2::RequestTokenError<
+            oauth2::reqwest::Error<reqwest::Error>,
+            oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
+        >,
+    ),
     #[error("HTTP request error: {0}")]
     HttpError(#[from] reqwest::Error),
     #[error("User info request failed: {0}")]
@@ -375,7 +424,10 @@ impl OAuthMiddleware {
 
 #[async_trait::async_trait]
 impl crate::Middleware for OAuthMiddleware {
-    fn before(&self, req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: Request<Body>,
+    ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         // For OAuth, we don't need to modify the request before handling
         // The actual OAuth logic is handled in the route handlers
         Box::pin(async move { Ok(req) })
@@ -387,7 +439,8 @@ impl OAuthMiddleware {
     async fn _handle_oauth_callback(&self, req: crate::Request) -> crate::Response {
         let path_segments: Vec<&str> = req.uri().path().split('/').collect();
         if path_segments.len() < 4 {
-            return crate::Response::new(StatusCode::BAD_REQUEST).body(Body::from("Invalid OAuth callback URL"));
+            return crate::Response::new(StatusCode::BAD_REQUEST)
+                .body(Body::from("Invalid OAuth callback URL"));
         }
 
         let provider = path_segments[2]; // /auth/{provider}/callback
@@ -400,16 +453,26 @@ impl OAuthMiddleware {
 
         let code = match params.get("code") {
             Some(code) => code,
-            None => return crate::Response::new(StatusCode::BAD_REQUEST).body(Body::from("Missing authorization code")),
+            None => {
+                return crate::Response::new(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Missing authorization code"))
+            }
         };
 
         let state = match params.get("state") {
             Some(state) => state,
-            None => return crate::Response::new(StatusCode::BAD_REQUEST).body(Body::from("Missing state parameter")),
+            None => {
+                return crate::Response::new(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Missing state parameter"))
+            }
         };
 
         // Exchange code for tokens
-        match self._oauth_service.exchange_code(provider, code, state).await {
+        match self
+            ._oauth_service
+            .exchange_code(provider, code, state)
+            .await
+        {
             Ok(tokens) => {
                 // Get user info
                 match self._oauth_service.get_user_info(provider, &tokens).await {
@@ -427,16 +490,12 @@ impl OAuthMiddleware {
                             .header("content-type", "application/json")
                             .json(&response_data)
                     }
-                    Err(e) => {
-                        crate::Response::new(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::from(format!("Failed to get user info: {}", e)))
-                    }
+                    Err(e) => crate::Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from(format!("Failed to get user info: {}", e))),
                 }
             }
-            Err(e) => {
-                crate::Response::new(StatusCode::BAD_REQUEST)
-                    .body(Body::from(format!("OAuth exchange failed: {}", e)))
-            }
+            Err(e) => crate::Response::new(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("OAuth exchange failed: {}", e))),
         }
     }
 }
@@ -452,26 +511,25 @@ pub mod handlers {
     ) -> crate::Response {
         let path_segments: Vec<&str> = req.uri().path().split('/').collect();
         if path_segments.len() < 3 {
-            return crate::Response::new(StatusCode::BAD_REQUEST).body(Body::from("Invalid OAuth login URL"));
+            return crate::Response::new(StatusCode::BAD_REQUEST)
+                .body(Body::from("Invalid OAuth login URL"));
         }
 
         let provider = path_segments[2]; // /auth/{provider}
 
         match oauth_service.get_authorization_url(provider).await {
             Ok((url, _state)) => {
-                crate::Response::new(StatusCode::FOUND)
-                    .header("location", &url.to_string())
+                crate::Response::new(StatusCode::FOUND).header("location", &url.to_string())
             }
-            Err(e) => {
-                crate::Response::new(StatusCode::BAD_REQUEST)
-                    .body(Body::from(format!("OAuth login failed: {}", e)))
-            }
+            Err(e) => crate::Response::new(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("OAuth login failed: {}", e))),
         }
     }
 
     /// Get OAuth providers info
     pub async fn oauth_providers(oauth_service: Arc<OAuthService>) -> crate::Response {
-        let providers: Vec<serde_json::Value> = oauth_service.get_providers()
+        let providers: Vec<serde_json::Value> = oauth_service
+            .get_providers()
             .into_iter()
             .map(|name| {
                 serde_json::json!({

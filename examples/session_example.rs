@@ -4,18 +4,19 @@
 //! with different storage backends.
 
 use aiviania::{
-    server::AivianiaServer,
-    router::{Route, Router},
-    session::{SessionManager, SessionMiddleware, MemorySessionStore},
     request::AivianiaRequest,
     response::AivianiaResponse,
+    router::{Route, Router},
+    server::AivianiaServer,
+    session::{MemorySessionStore, SessionManager, SessionMiddleware},
 };
 use hyper::{Body, StatusCode};
 use std::sync::Arc;
 
 async fn session_example_handler(req: AivianiaRequest) -> AivianiaResponse {
     // Get session from request (if exists)
-    let session_data = req.extensions()
+    let session_data = req
+        .extensions()
         .get::<aiviania::session::SessionData>()
         .cloned();
 
@@ -24,21 +25,22 @@ async fn session_example_handler(req: AivianiaRequest) -> AivianiaResponse {
             // Get visit count from session
             let visit_count: i32 = session.get("visit_count").unwrap_or(0);
 
-            AivianiaResponse::new(StatusCode::OK)
-                .body(Body::from(format!("Welcome back! Visit count: {}", visit_count + 1)))
+            AivianiaResponse::new(StatusCode::OK).body(Body::from(format!(
+                "Welcome back! Visit count: {}",
+                visit_count + 1
+            )))
         }
-        None => {
-            AivianiaResponse::new(StatusCode::OK)
-                .body(Body::from("Welcome! This is your first visit."))
-        }
+        None => AivianiaResponse::new(StatusCode::OK)
+            .body(Body::from("Welcome! This is your first visit.")),
     }
 }
 
 async fn create_session_handler(req: AivianiaRequest) -> AivianiaResponse {
     // This would typically be done in middleware or a more complex handler
     // For demonstration, we'll just return a message
-    AivianiaResponse::new(StatusCode::OK)
-        .body(Body::from("Session created! Check the cookies in your browser."))
+    AivianiaResponse::new(StatusCode::OK).body(Body::from(
+        "Session created! Check the cookies in your browser.",
+    ))
 }
 
 #[tokio::main]

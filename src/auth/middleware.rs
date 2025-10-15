@@ -8,8 +8,8 @@ use crate::auth::models::{Permission, User};
 use crate::auth::rbac::RBACService;
 use crate::auth::session::SessionManager;
 use crate::middleware::{Middleware, MiddlewareResult};
-use std::pin::Pin;
 use hyper::{header::AUTHORIZATION, HeaderMap, Request, Response, StatusCode};
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Authentication middleware for JWT tokens
@@ -70,16 +70,14 @@ impl AuthMiddleware {
             .get("cookie")
             .and_then(|h| h.to_str().ok())
             .and_then(|cookie_str| {
-                cookie_str
-                    .split(';')
-                    .find_map(|cookie| {
-                        let cookie = cookie.trim();
-                        if cookie.starts_with("aiviania_session=") {
-                            Some(cookie.trim_start_matches("aiviania_session=").to_string())
-                        } else {
-                            None
-                        }
-                    })
+                cookie_str.split(';').find_map(|cookie| {
+                    let cookie = cookie.trim();
+                    if cookie.starts_with("aiviania_session=") {
+                        Some(cookie.trim_start_matches("aiviania_session=").to_string())
+                    } else {
+                        None
+                    }
+                })
             })
     }
 
@@ -148,7 +146,9 @@ impl AuthMiddleware {
                         "Moderator" => user.add_role(crate::auth::models::Role::Moderator),
                         "User" => user.add_role(crate::auth::models::Role::User),
                         "Guest" => user.add_role(crate::auth::models::Role::Guest),
-                        custom => user.add_role(crate::auth::models::Role::Custom(custom.to_string())),
+                        custom => {
+                            user.add_role(crate::auth::models::Role::Custom(custom.to_string()))
+                        }
                     }
                 }
 
@@ -184,7 +184,11 @@ impl AuthMiddleware {
 
     /// Check if user has required permission
     #[allow(dead_code)]
-    fn check_permission(&self, user: &User, required_permission: Option<&Permission>) -> Result<(), AuthError> {
+    fn check_permission(
+        &self,
+        user: &User,
+        required_permission: Option<&Permission>,
+    ) -> Result<(), AuthError> {
         if let Some(permission) = required_permission {
             if !self.rbac_service.has_permission(user, permission) {
                 return Err(AuthError::InsufficientPermissions);
@@ -195,7 +199,12 @@ impl AuthMiddleware {
 }
 
 impl Middleware for AuthMiddleware {
-    fn before(&self, req: Request<hyper::Body>) -> Pin<Box<dyn std::future::Future<Output = MiddlewareResult<Request<hyper::Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: Request<hyper::Body>,
+    ) -> Pin<
+        Box<dyn std::future::Future<Output = MiddlewareResult<Request<hyper::Body>>> + Send + '_>,
+    > {
         let self_clone = self;
         Box::pin(async move {
             // Try JWT token first
@@ -227,7 +236,10 @@ impl Middleware for AuthMiddleware {
         })
     }
 
-    fn after(&self, resp: Response<hyper::Body>) -> Pin<Box<dyn std::future::Future<Output = Response<hyper::Body>> + Send + '_>> {
+    fn after(
+        &self,
+        resp: Response<hyper::Body>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Response<hyper::Body>> + Send + '_>> {
         Box::pin(async move {
             // No modifications needed for auth middleware
             resp
@@ -241,7 +253,9 @@ impl AuthMiddleware {
         Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .header("content-type", "application/json")
-            .body(hyper::Body::from(r#"{"error": "Unauthorized", "message": "Authentication required"}"#))
+            .body(hyper::Body::from(
+                r#"{"error": "Unauthorized", "message": "Authentication required"}"#,
+            ))
             .unwrap()
     }
 
@@ -251,7 +265,9 @@ impl AuthMiddleware {
         Response::builder()
             .status(StatusCode::FORBIDDEN)
             .header("content-type", "application/json")
-            .body(hyper::Body::from(r#"{"error": "Forbidden", "message": "Insufficient permissions"}"#))
+            .body(hyper::Body::from(
+                r#"{"error": "Forbidden", "message": "Insufficient permissions"}"#,
+            ))
             .unwrap()
     }
 }
@@ -310,13 +326,15 @@ mod tests {
         let middleware = AuthMiddleware::new(jwt_service.clone());
 
         // Create a test token
-        let token = jwt_service.create_access_token(
-            "user123",
-            "testuser",
-            "test@example.com",
-            &["User".to_string()],
-            &["ApiAccess".to_string()],
-        ).unwrap();
+        let token = jwt_service
+            .create_access_token(
+                "user123",
+                "testuser",
+                "test@example.com",
+                &["User".to_string()],
+                &["ApiAccess".to_string()],
+            )
+            .unwrap();
 
         // Create request with token
         let req = Request::builder()

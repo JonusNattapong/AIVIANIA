@@ -2,11 +2,11 @@
 //!
 //! This module provides middleware traits and stacks for processing requests and responses.
 
+use crate::database::Repository;
+use hyper::{Body, Request, Response, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
-use hyper::{Request, Response, Body, StatusCode};
 use std::sync::Arc;
-use crate::database::Repository;
 
 /// Type alias for middleware results
 pub type MiddlewareResult<T> = Result<T, Response<Body>>;
@@ -15,12 +15,18 @@ pub type MiddlewareResult<T> = Result<T, Response<Body>>;
 pub trait Middleware: Send + Sync {
     /// Process before the request is handled.
     /// Return Ok(req) to continue, or Err(response) to short-circuit.
-    fn before(&self, req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: Request<Body>,
+    ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         Box::pin(async move { Ok(req) })
     }
 
     /// Process after the response is generated.
-    fn after(&self, resp: Response<Body>) -> Pin<Box<dyn Future<Output = Response<Body>> + Send + '_>> {
+    fn after(
+        &self,
+        resp: Response<Body>,
+    ) -> Pin<Box<dyn Future<Output = Response<Body>> + Send + '_>> {
         Box::pin(async move { resp })
     }
 }
@@ -67,7 +73,10 @@ impl MiddlewareStack {
 pub struct LoggingMiddleware;
 
 impl Middleware for LoggingMiddleware {
-    fn before(&self, req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+    fn before(
+        &self,
+        req: Request<Body>,
+    ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
         Box::pin(async move {
             println!("Request: {} {}", req.method(), req.uri());
             Ok(req)
@@ -83,7 +92,13 @@ pub struct RoleMiddleware {
 }
 
 impl RoleMiddleware {
-    pub fn new(required_role: &str, user_repo: Arc<crate::database::repositories::UserRepository<crate::database::DatabaseManager>>, rbac_service: Arc<crate::auth::rbac::RBACService>) -> Self {
+    pub fn new(
+        required_role: &str,
+        user_repo: Arc<
+            crate::database::repositories::UserRepository<crate::database::DatabaseManager>,
+        >,
+        rbac_service: Arc<crate::auth::rbac::RBACService>,
+    ) -> Self {
         Self {
             required_role: required_role.to_string(),
             user_repo,
@@ -93,7 +108,10 @@ impl RoleMiddleware {
 }
 
 impl Middleware for RoleMiddleware {
-    fn before(&self, req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: Request<Body>,
+    ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
         let required_role = self.required_role.clone();
         let user_repo = self.user_repo.clone();
         let rbac_service = self.rbac_service.clone();
@@ -103,17 +121,26 @@ impl Middleware for RoleMiddleware {
                 if let Ok(user_id) = claims.sub.parse::<i64>() {
                     if let Ok(Some(user)) = user_repo.find_by_id(user_id).await {
                         let auth_user = user.to_auth_user();
-                        let has = rbac_service.has_role(&auth_user, &crate::auth::models::Role::Custom(required_role.clone()));
+                        let has = rbac_service.has_role(
+                            &auth_user,
+                            &crate::auth::models::Role::Custom(required_role.clone()),
+                        );
                         if has {
                             return Ok(req);
                         }
                     }
                 }
-                return Err(Response::builder().status(StatusCode::FORBIDDEN).body(Body::from("Forbidden: insufficient role")).unwrap());
+                return Err(Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body(Body::from("Forbidden: insufficient role"))
+                    .unwrap());
             }
 
             // No Claims in extensions (user not authenticated)
-            Err(Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::from("Unauthorized")).unwrap())
+            Err(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::from("Unauthorized"))
+                .unwrap())
         })
     }
 }
@@ -123,14 +150,18 @@ impl Middleware for RoleMiddleware {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::{Request, Body, Method, StatusCode};
+    use hyper::{Body, Method, Request, StatusCode};
 
     // Mock middleware that adds a header in before
     struct MockBeforeMiddleware;
     impl Middleware for MockBeforeMiddleware {
-        fn before(&self, mut req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+        fn before(
+            &self,
+            mut req: Request<Body>,
+        ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
             Box::pin(async move {
-                req.headers_mut().insert("x-mock", "before".parse().unwrap());
+                req.headers_mut()
+                    .insert("x-mock", "before".parse().unwrap());
                 Ok(req)
             })
         }
@@ -139,9 +170,13 @@ mod tests {
     // Mock middleware that adds a header in after
     struct MockAfterMiddleware;
     impl Middleware for MockAfterMiddleware {
-        fn after(&self, mut resp: Response<Body>) -> Pin<Box<dyn Future<Output = Response<Body>> + Send>> {
+        fn after(
+            &self,
+            mut resp: Response<Body>,
+        ) -> Pin<Box<dyn Future<Output = Response<Body>> + Send>> {
             Box::pin(async move {
-                resp.headers_mut().insert("x-mock", "after".parse().unwrap());
+                resp.headers_mut()
+                    .insert("x-mock", "after".parse().unwrap());
                 resp
             })
         }
@@ -150,9 +185,15 @@ mod tests {
     // Mock middleware that short-circuits
     struct MockShortCircuitMiddleware;
     impl Middleware for MockShortCircuitMiddleware {
-        fn before(&self, _req: Request<Body>) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+        fn before(
+            &self,
+            _req: Request<Body>,
+        ) -> Pin<Box<dyn Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
             Box::pin(async move {
-                Err(Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Short-circuited")).unwrap())
+                Err(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Short-circuited"))
+                    .unwrap())
             })
         }
     }
@@ -174,13 +215,13 @@ mod tests {
     async fn test_middleware_stack_before_success() {
         let mut stack = MiddlewareStack::new();
         stack.add(Box::new(MockBeforeMiddleware));
-        
+
         let req = Request::builder()
             .method(Method::GET)
             .uri("/test")
             .body(Body::empty())
             .unwrap();
-        
+
         let result = stack.before(req).await;
         assert!(result.is_ok());
         let req = result.unwrap();
@@ -191,13 +232,13 @@ mod tests {
     async fn test_middleware_stack_before_short_circuit() {
         let mut stack = MiddlewareStack::new();
         stack.add(Box::new(MockShortCircuitMiddleware));
-        
+
         let req = Request::builder()
             .method(Method::GET)
             .uri("/test")
             .body(Body::empty())
             .unwrap();
-        
+
         let result = stack.before(req).await;
         assert!(result.is_err());
         let resp = result.unwrap_err();
@@ -208,12 +249,12 @@ mod tests {
     async fn test_middleware_stack_after() {
         let mut stack = MiddlewareStack::new();
         stack.add(Box::new(MockAfterMiddleware));
-        
+
         let resp = Response::builder()
             .status(StatusCode::OK)
             .body(Body::empty())
             .unwrap();
-        
+
         let result = stack.after(resp).await;
         assert_eq!(result.headers().get("x-mock").unwrap(), "after");
     }
@@ -226,7 +267,7 @@ mod tests {
             .uri("/test")
             .body(Body::empty())
             .unwrap();
-        
+
         let result = middleware.before(req).await;
         assert!(result.is_ok());
         // Logging is just println, hard to test output, but ensures no panic

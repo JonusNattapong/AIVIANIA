@@ -1,10 +1,10 @@
+use multer::Multipart;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::NamedTempFile;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use multer::Multipart;
 use uuid::Uuid;
-use tempfile::NamedTempFile;
 
 /// Configuration for file upload handling
 #[derive(Debug, Clone)]
@@ -74,7 +74,11 @@ impl UploadManager {
         let mut file_count = 0;
 
         // Process each field
-        while let Some(mut field) = multipart.next_field().await.map_err(UploadError::Multipart)? {
+        while let Some(mut field) = multipart
+            .next_field()
+            .await
+            .map_err(UploadError::Multipart)?
+        {
             file_count += 1;
 
             // Check file limit
@@ -87,22 +91,25 @@ impl UploadManager {
             // Check if this field has a filename (it's a file field)
             if let Some(filename) = field.file_name() {
                 let filename = filename.to_string(); // Clone the filename
-                let content_type = field.content_type()
+                let content_type = field
+                    .content_type()
                     .map(|ct| ct.to_string())
                     .unwrap_or_else(|| "application/octet-stream".to_string());
 
                 // Validate file type if restrictions are set
-                if !self.config.allowed_types.is_empty() &&
-                   !self.config.allowed_types.contains(&content_type) {
+                if !self.config.allowed_types.is_empty()
+                    && !self.config.allowed_types.contains(&content_type)
+                {
                     return Err(UploadError::InvalidFileType(content_type));
                 }
 
                 // Create temporary file
-                let temp_file = NamedTempFile::new_in(&self.config.temp_dir)
-                    .map_err(UploadError::Io)?;
+                let temp_file =
+                    NamedTempFile::new_in(&self.config.temp_dir).map_err(UploadError::Io)?;
 
                 let temp_path = temp_file.path().to_path_buf();
-                let mut temp_file = tokio::fs::File::create(&temp_path).await
+                let mut temp_file = tokio::fs::File::create(&temp_path)
+                    .await
                     .map_err(UploadError::Io)?;
 
                 let mut size = 0usize;
@@ -141,14 +148,16 @@ impl UploadManager {
     /// Move uploaded files to permanent storage
     pub async fn store_files(&self, files: &mut [UploadedFile]) -> Result<(), UploadError> {
         // Ensure upload directory exists
-        fs::create_dir_all(&self.config.upload_dir).await
+        fs::create_dir_all(&self.config.upload_dir)
+            .await
             .map_err(UploadError::Io)?;
 
         for file in files.iter_mut() {
             if let Some(temp_path) = &file.temp_path {
                 // Generate unique filename
                 let file_path = PathBuf::from(&file.filename);
-                let extension = file_path.extension()
+                let extension = file_path
+                    .extension()
                     .and_then(|ext| ext.to_str())
                     .unwrap_or("");
 
@@ -156,7 +165,8 @@ impl UploadManager {
                 let storage_path = self.config.upload_dir.join(unique_filename);
 
                 // Move file to permanent storage
-                fs::rename(temp_path, &storage_path).await
+                fs::rename(temp_path, &storage_path)
+                    .await
                     .map_err(UploadError::Io)?;
 
                 file.storage_path = Some(storage_path);
@@ -184,7 +194,11 @@ impl UploadManager {
         }
 
         // Check MIME type
-        if self.config.allowed_types.contains(&content_type.to_string()) {
+        if self
+            .config
+            .allowed_types
+            .contains(&content_type.to_string())
+        {
             return true;
         }
 
@@ -192,7 +206,11 @@ impl UploadManager {
         if let Some(extension) = PathBuf::from(filename).extension() {
             if let Some(ext_str) = extension.to_str() {
                 let guessed_mime = mime_guess::from_ext(ext_str).first_or_octet_stream();
-                if self.config.allowed_types.contains(&guessed_mime.to_string()) {
+                if self
+                    .config
+                    .allowed_types
+                    .contains(&guessed_mime.to_string())
+                {
                     return true;
                 }
             }
@@ -231,7 +249,17 @@ impl UploadMiddleware {
 }
 
 impl crate::middleware::Middleware for UploadMiddleware {
-    fn before(&self, req: hyper::Request<hyper::Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<hyper::Request<hyper::Body>, hyper::Response<hyper::Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: hyper::Request<hyper::Body>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<hyper::Request<hyper::Body>, hyper::Response<hyper::Body>>,
+                > + Send
+                + '_,
+        >,
+    > {
         Box::pin(async move {
             // Check if this is a multipart request
             if let Some(content_type) = req.headers().get(hyper::header::CONTENT_TYPE) {
@@ -242,12 +270,18 @@ impl crate::middleware::Middleware for UploadMiddleware {
                             let boundary = boundary.to_string();
 
                             // Process multipart data
-                            match self.upload_manager.process_multipart(&boundary, req.into_body()).await {
+                            match self
+                                .upload_manager
+                                .process_multipart(&boundary, req.into_body())
+                                .await
+                            {
                                 Ok(files) => {
                                     // Create new request with uploaded files in extensions
-                                    let (parts, _) = hyper::Request::new(hyper::Body::empty()).into_parts();
+                                    let (parts, _) =
+                                        hyper::Request::new(hyper::Body::empty()).into_parts();
 
-                                    let mut req = hyper::Request::from_parts(parts, hyper::Body::empty());
+                                    let mut req =
+                                        hyper::Request::from_parts(parts, hyper::Body::empty());
 
                                     // Store uploaded files in extensions
                                     req.extensions_mut().insert(files);

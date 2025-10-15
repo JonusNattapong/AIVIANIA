@@ -1,8 +1,8 @@
 //! CORS (Cross-Origin Resource Sharing) Handling
 
-use super::{SecurityError, SecurityEvent, SecurityResult, SecurityMiddleware};
-use hyper::{Request, Response, Body, Method};
+use super::{SecurityError, SecurityEvent, SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
+use hyper::{Body, Method, Request, Response};
 use std::sync::Arc;
 
 /// CORS configuration
@@ -91,7 +91,10 @@ impl CorsMiddleware {
         if let Some(origin_value) = origin {
             if let Ok(origin_str) = origin_value.to_str() {
                 if !self.is_origin_allowed(origin_str) {
-                    return Err(SecurityError::CorsViolation(format!("Origin '{}' not allowed", origin_str)));
+                    return Err(SecurityError::CorsViolation(format!(
+                        "Origin '{}' not allowed",
+                        origin_str
+                    )));
                 }
             }
         }
@@ -100,7 +103,10 @@ impl CorsMiddleware {
         if let Some(method_value) = request_method {
             if let Ok(method_str) = method_value.to_str() {
                 if !self.is_method_allowed(method_str) {
-                    return Err(SecurityError::CorsViolation(format!("Method '{}' not allowed", method_str)));
+                    return Err(SecurityError::CorsViolation(format!(
+                        "Method '{}' not allowed",
+                        method_str
+                    )));
                 }
             }
         }
@@ -111,21 +117,23 @@ impl CorsMiddleware {
                 for header in headers_str.split(',') {
                     let header = header.trim();
                     if !self.is_header_allowed(header) {
-                        return Err(SecurityError::CorsViolation(format!("Header '{}' not allowed", header)));
+                        return Err(SecurityError::CorsViolation(format!(
+                            "Header '{}' not allowed",
+                            header
+                        )));
                     }
                 }
             }
         }
 
         // Create preflight response
-        let mut response = Response::builder()
-            .status(200)
-            .body(Body::empty())
-            .unwrap();
+        let mut response = Response::builder().status(200).body(Body::empty()).unwrap();
 
         // Add CORS headers
         if let Some(origin) = origin {
-            response.headers_mut().insert("Access-Control-Allow-Origin", origin.clone());
+            response
+                .headers_mut()
+                .insert("Access-Control-Allow-Origin", origin.clone());
         }
 
         let allowed_methods = self.config.allowed_methods.join(", ");
@@ -141,10 +149,9 @@ impl CorsMiddleware {
         );
 
         if self.config.allow_credentials {
-            response.headers_mut().insert(
-                "Access-Control-Allow-Credentials",
-                "true".parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert("Access-Control-Allow-Credentials", "true".parse().unwrap());
         }
 
         if let Some(max_age) = self.config.max_age {
@@ -163,17 +170,18 @@ impl CorsMiddleware {
         if let Some(origin) = request.headers().get("origin") {
             if let Ok(origin_str) = origin.to_str() {
                 if self.is_origin_allowed(origin_str) {
-                    response.headers_mut().insert("Access-Control-Allow-Origin", origin.clone());
+                    response
+                        .headers_mut()
+                        .insert("Access-Control-Allow-Origin", origin.clone());
                 }
             }
         }
 
         // Add credentials
         if self.config.allow_credentials {
-            response.headers_mut().insert(
-                "Access-Control-Allow-Credentials",
-                "true".parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert("Access-Control-Allow-Credentials", "true".parse().unwrap());
         }
 
         // Add expose headers
@@ -210,14 +218,19 @@ impl SecurityMiddleware for CorsMiddleware {
                     let event = SecurityEvent::CorsViolation {
                         origin: Some(origin_str.to_string()),
                         method: request.method().to_string(),
-                        headers: request.headers().keys()
+                        headers: request
+                            .headers()
+                            .keys()
                             .map(|k| k.as_str().to_string())
                             .collect(),
                         timestamp: chrono::Utc::now(),
                     };
                     event_logger.log_event(event).await;
 
-                    return Err(SecurityError::CorsViolation(format!("Origin '{}' not allowed", origin_str)));
+                    return Err(SecurityError::CorsViolation(format!(
+                        "Origin '{}' not allowed",
+                        origin_str
+                    )));
                 }
             }
         }
@@ -238,22 +251,31 @@ impl CorsResponseProcessor {
     }
 
     /// Process response to add CORS headers
-    pub fn process_response(&self, mut response: Response<Body>, request: &Request<Body>) -> Response<Body> {
+    pub fn process_response(
+        &self,
+        mut response: Response<Body>,
+        request: &Request<Body>,
+    ) -> Response<Body> {
         // Add CORS headers
         if let Some(origin) = request.headers().get("origin") {
             if let Ok(origin_str) = origin.to_str() {
                 if self.config.allowed_origins.contains(&"*".to_string())
-                    || self.config.allowed_origins.contains(&origin_str.to_string()) {
-                    response.headers_mut().insert("Access-Control-Allow-Origin", origin.clone());
+                    || self
+                        .config
+                        .allowed_origins
+                        .contains(&origin_str.to_string())
+                {
+                    response
+                        .headers_mut()
+                        .insert("Access-Control-Allow-Origin", origin.clone());
                 }
             }
         }
 
         if self.config.allow_credentials {
-            response.headers_mut().insert(
-                "Access-Control-Allow-Credentials",
-                "true".parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert("Access-Control-Allow-Credentials", "true".parse().unwrap());
         }
 
         if !self.config.expose_headers.is_empty() {

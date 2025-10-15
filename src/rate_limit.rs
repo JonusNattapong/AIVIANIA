@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::time::{Instant, Duration};
 use crate::middleware::Middleware;
 use crate::response::AivianiaResponse;
-use hyper::{Request, Response, Body, StatusCode};
+use hyper::{Body, Request, Response, StatusCode};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// Simple token-bucket rate limiter (per-key) in-memory implementation.
 pub struct RateLimiter {
@@ -17,7 +17,7 @@ impl RateLimiter {
         Self {
             capacity,
             refill_interval,
-            buckets: Arc::new(Mutex::new(std::collections::HashMap::new()))
+            buckets: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -87,10 +87,7 @@ pub struct RateLimitMiddleware {
 impl RateLimitMiddleware {
     /// Create new rate limiting middleware
     pub fn new(config: RateLimitConfig) -> Self {
-        let memory_limiter = RateLimiter::new(
-            config.requests_per_window,
-            config.window_duration,
-        );
+        let memory_limiter = RateLimiter::new(config.requests_per_window, config.window_duration);
 
         #[cfg(feature = "redis")]
         let redis_limiter = if config.use_redis {
@@ -150,16 +147,13 @@ impl RateLimitMiddleware {
                     .unwrap_or("anonymous")
                     .to_string()
             }
-            KeyStrategy::Header(header_name) => {
-                req.headers()
-                    .get(header_name)
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or("unknown")
-                    .to_string()
-            }
-            KeyStrategy::Path => {
-                req.uri().path().to_string()
-            }
+            KeyStrategy::Header(header_name) => req
+                .headers()
+                .get(header_name)
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("unknown")
+                .to_string(),
+            KeyStrategy::Path => req.uri().path().to_string(),
         }
     }
 
@@ -176,7 +170,12 @@ impl RateLimitMiddleware {
 
 #[async_trait::async_trait]
 impl Middleware for RateLimitMiddleware {
-    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        req: Request<Body>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>,
+    > {
         let key = self.extract_key(&req);
 
         Box::pin(async move {

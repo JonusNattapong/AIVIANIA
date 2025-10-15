@@ -1,6 +1,6 @@
 //! Model registry and versioning
 
-use super::{MlError, MlResult, types::*};
+use super::{types::*, MlError, MlResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +17,11 @@ impl ModelRegistry {
     pub fn new(config: RegistryConfig) -> Self {
         let storage: Box<dyn ModelStorage> = match config.storage_type.as_str() {
             "memory" => Box::new(MemoryStorage::new()),
-            "file" => Box::new(FileStorage::new(config.storage_path.unwrap_or_else(|| "./models".to_string()))),
+            "file" => Box::new(FileStorage::new(
+                config
+                    .storage_path
+                    .unwrap_or_else(|| "./models".to_string()),
+            )),
             _ => Box::new(MemoryStorage::new()),
         };
 
@@ -28,7 +32,11 @@ impl ModelRegistry {
     }
 
     /// Register a model
-    pub async fn register_model(&self, metadata: ModelMetadata, model_data: Vec<u8>) -> MlResult<()> {
+    pub async fn register_model(
+        &self,
+        metadata: ModelMetadata,
+        model_data: Vec<u8>,
+    ) -> MlResult<()> {
         let entry = ModelEntry {
             metadata: metadata.clone(),
             data: model_data,
@@ -37,11 +45,15 @@ impl ModelRegistry {
         };
 
         // Store in backend
-        self.storage.store(&metadata.name, &metadata.version, &entry).await?;
+        self.storage
+            .store(&metadata.name, &metadata.version, &entry)
+            .await?;
 
         // Update in-memory index
         let mut models = self.models.write().await;
-        let model_versions = models.entry(metadata.name.clone()).or_insert_with(HashMap::new);
+        let model_versions = models
+            .entry(metadata.name.clone())
+            .or_insert_with(HashMap::new);
         model_versions.insert(metadata.version.clone(), entry);
 
         Ok(())
@@ -111,7 +123,12 @@ impl ModelRegistry {
     }
 
     /// Update model status
-    pub async fn update_status(&self, name: &str, version: &str, status: ModelStatus) -> MlResult<()> {
+    pub async fn update_status(
+        &self,
+        name: &str,
+        version: &str,
+        status: ModelStatus,
+    ) -> MlResult<()> {
         let mut models = self.models.write().await;
         if let Some(model_versions) = models.get_mut(name) {
             if let Some(entry) = model_versions.get_mut(version) {
@@ -119,7 +136,10 @@ impl ModelRegistry {
                 // Update storage
                 self.storage.store(name, version, entry).await?;
             } else {
-                return Err(MlError::NotFound(format!("Model '{}' version '{}' not found", name, version)));
+                return Err(MlError::NotFound(format!(
+                    "Model '{}' version '{}' not found",
+                    name, version
+                )));
             }
         } else {
             return Err(MlError::NotFound(format!("Model '{}' not found", name)));
@@ -229,7 +249,9 @@ impl ModelStorage for MemoryStorage {
         data.get(name)
             .and_then(|versions| versions.get(version))
             .cloned()
-            .ok_or_else(|| MlError::NotFound(format!("Model '{}' version '{}' not found", name, version)))
+            .ok_or_else(|| {
+                MlError::NotFound(format!("Model '{}' version '{}' not found", name, version))
+            })
     }
 
     async fn delete(&self, name: &str, version: &str) -> MlResult<bool> {
@@ -281,19 +303,22 @@ impl FileStorage {
 impl ModelStorage for FileStorage {
     async fn store(&self, name: &str, version: &str, entry: &ModelEntry) -> MlResult<()> {
         let model_dir = format!("{}/{}/{}", self.base_path, name, version);
-        tokio::fs::create_dir_all(&model_dir).await
+        tokio::fs::create_dir_all(&model_dir)
+            .await
             .map_err(|e| MlError::Registry(format!("Failed to create directory: {}", e)))?;
 
         // Save model data
         let model_path = self.get_model_path(name, version);
-        tokio::fs::write(&model_path, &entry.data).await
+        tokio::fs::write(&model_path, &entry.data)
+            .await
             .map_err(|e| MlError::Registry(format!("Failed to write model data: {}", e)))?;
 
         // Save metadata
         let metadata_path = self.get_metadata_path(name, version);
         let metadata_json = serde_json::to_string_pretty(&entry)
             .map_err(|e| MlError::Serialization(e.to_string()))?;
-        tokio::fs::write(&metadata_path, metadata_json).await
+        tokio::fs::write(&metadata_path, metadata_json)
+            .await
             .map_err(|e| MlError::Registry(format!("Failed to write metadata: {}", e)))?;
 
         Ok(())
@@ -303,8 +328,11 @@ impl ModelStorage for FileStorage {
         let metadata_path = self.get_metadata_path(name, version);
 
         // Load metadata first
-        let metadata_content = tokio::fs::read_to_string(&metadata_path).await
-            .map_err(|_| MlError::NotFound(format!("Model '{}' version '{}' not found", name, version)))?;
+        let metadata_content = tokio::fs::read_to_string(&metadata_path)
+            .await
+            .map_err(|_| {
+                MlError::NotFound(format!("Model '{}' version '{}' not found", name, version))
+            })?;
 
         let entry: ModelEntry = serde_json::from_str(&metadata_content)
             .map_err(|e| MlError::Deserialization(e.to_string()))?;
@@ -316,7 +344,8 @@ impl ModelStorage for FileStorage {
         let model_dir = format!("{}/{}/{}", self.base_path, name, version);
 
         if tokio::fs::metadata(&model_dir).await.is_ok() {
-            tokio::fs::remove_dir_all(&model_dir).await
+            tokio::fs::remove_dir_all(&model_dir)
+                .await
                 .map_err(|e| MlError::Registry(format!("Failed to delete model: {}", e)))?;
             Ok(true)
         } else {

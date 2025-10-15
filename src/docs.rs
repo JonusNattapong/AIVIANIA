@@ -43,7 +43,8 @@ pub struct ApiDoc;
 /// Create a router with Swagger UI
 #[cfg(feature = "utoipa")]
 pub fn swagger_ui() -> Router {
-    Router::new().merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+    Router::new()
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
 }
 
 /// Get the OpenAPI JSON specification

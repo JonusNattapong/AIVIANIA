@@ -9,19 +9,19 @@
 //! - Model monitoring and metrics
 //! - Integration with popular ML frameworks
 
+pub mod config;
+pub mod inference;
+pub mod metrics;
 pub mod model;
 pub mod pipeline;
 pub mod registry;
-pub mod inference;
-pub mod metrics;
-pub mod config;
 
+pub use config::*;
+pub use inference::*;
+pub use metrics::*;
 pub use model::*;
 pub use pipeline::*;
 pub use registry::*;
-pub use inference::*;
-pub use metrics::*;
-pub use config::*;
 
 /// Result type for AI/ML operations
 pub type MlResult<T> = Result<T, MlError>;

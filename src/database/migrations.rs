@@ -3,7 +3,7 @@
 //! This module demonstrates how to create and use database migrations
 //! with the AIVIANIA framework.
 
-use super::{Migration, DatabaseConnection, DatabaseError};
+use super::{DatabaseConnection, DatabaseError, Migration};
 
 /// Example migration: Create users table
 pub struct CreateUsersTable;
@@ -17,7 +17,11 @@ impl Migration for CreateUsersTable {
         "Create users table with basic authentication fields"
     }
 
-    fn up<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn up<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let query = r#"
             CREATE TABLE users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +36,8 @@ impl Migration for CreateUsersTable {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#.to_string();
+        "#
+        .to_string();
 
         Box::pin(async move {
             db.execute(&query, vec![]).await?;
@@ -40,7 +45,11 @@ impl Migration for CreateUsersTable {
         })
     }
 
-    fn down<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn down<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let query = "DROP TABLE users".to_string();
         Box::pin(async move {
             db.execute(&query, vec![]).await?;
@@ -61,7 +70,11 @@ impl Migration for CreateSessionsTable {
         "Create sessions table for session management"
     }
 
-    fn up<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn up<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let query = r#"
             CREATE TABLE sessions (
                 id VARCHAR(255) PRIMARY KEY,
@@ -70,7 +83,8 @@ impl Migration for CreateSessionsTable {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        "#.to_string();
+        "#
+        .to_string();
 
         Box::pin(async move {
             db.execute(&query, vec![]).await?;
@@ -78,7 +92,11 @@ impl Migration for CreateSessionsTable {
         })
     }
 
-    fn down<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn down<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let query = "DROP TABLE sessions".to_string();
         Box::pin(async move {
             db.execute(&query, vec![]).await?;
@@ -99,7 +117,11 @@ impl Migration for AddUserProfileFields {
         "Add profile fields to users table"
     }
 
-    fn up<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn up<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let queries = vec![
             "ALTER TABLE users ADD COLUMN first_name VARCHAR(100)".to_string(),
             "ALTER TABLE users ADD COLUMN last_name VARCHAR(100)".to_string(),
@@ -115,7 +137,11 @@ impl Migration for AddUserProfileFields {
         })
     }
 
-    fn down<'a>(&'a self, db: &'a dyn DatabaseConnection) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>> {
+    fn down<'a>(
+        &'a self,
+        db: &'a dyn DatabaseConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), DatabaseError>> + Send + 'a>>
+    {
         let queries = vec![
             "ALTER TABLE users DROP COLUMN first_name".to_string(),
             "ALTER TABLE users DROP COLUMN last_name".to_string(),

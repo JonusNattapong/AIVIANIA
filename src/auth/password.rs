@@ -49,10 +49,12 @@ impl PasswordService {
 
     /// Verify a password against a hash
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool, PasswordError> {
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|_| PasswordError::InvalidHashFormat)?;
+        let parsed_hash = PasswordHash::new(hash).map_err(|_| PasswordError::InvalidHashFormat)?;
 
-        match self.argon2.verify_password(password.as_bytes(), &parsed_hash) {
+        match self
+            .argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+        {
             Ok(_) => Ok(true),
             Err(argon2::password_hash::Error::Password) => Ok(false),
             Err(e) => Err(PasswordError::VerificationError(e.to_string())),
