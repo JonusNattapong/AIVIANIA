@@ -121,6 +121,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     server.run("127.0.0.1:3000").await?;
     Ok(())
 }
+
+## Changelog
+
+### v0.1.4 — 2025-10-15
+
+- Add body-buffer middleware to safely buffer and re-use request bodies.
+- Security improvements: CSRF protection, CORS handling, security headers and automated tests covering CSRF/CORS flows.
+- Observability: request metrics and a metrics middleware for Prometheus-style collection.
+- CI: GitHub Actions workflow added to run formatting, clippy, cargo test and a Docker build + Trivy image scan.
+
+Merged PRs: #4, #5
+
+---
+
+For full details and examples, see the `examples/` directory and the project CHANGELOG in GitHub releases.
+
 ```
 
 ## Authentication & RBAC
