@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
 
+# Grant the workflow permission to write repo contents so the GITHUB_TOKEN
+# can create releases. Without this the action fails with
+# "Resource not accessible by integration" on some repos.
+permissions:
+  contents: write
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -17,5 +23,3 @@ jobs:
           draft: true
           body: |
             Draft release created for tag ${{ github.ref_name }}. The CI workflow will build and upload platform-specific assets.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
