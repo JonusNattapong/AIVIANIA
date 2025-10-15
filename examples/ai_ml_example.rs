@@ -52,11 +52,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let model = ModelFactory::create_in_memory(metadata);
-    let mut model_with_data = model.downcast::<aiviania::ai_ml::model::InMemoryModel>().unwrap();
-    model_with_data.load_from_json(serde_json::json!({
-        "positive_words": ["good", "great", "excellent", "awesome"],
-        "negative_words": ["bad", "terrible", "awful", "horrible"]
-    })).await?;
+    let mut model_with_data = model
+        .downcast::<aiviania::ai_ml::model::InMemoryModel>()
+        .unwrap();
+    model_with_data
+        .load_from_json(serde_json::json!({
+            "positive_words": ["good", "great", "excellent", "awesome"],
+            "negative_words": ["bad", "terrible", "awful", "horrible"]
+        }))
+        .await?;
 
     let inference_input = InferenceInput {
         data: serde_json::json!({"input": "This is a great product!"}),
@@ -75,25 +79,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry = ModelRegistry::new(registry_config);
 
     let model_data = b"dummy model data".to_vec();
-    registry.register_model(model_with_data.metadata().clone(), model_data).await?;
+    registry
+        .register_model(model_with_data.metadata().clone(), model_data)
+        .await?;
     println!("✅ Model registered in registry");
 
     let retrieved_model = registry.get_model("sentiment_analyzer", "1.0.0").await?;
-    println!("✅ Retrieved model: {} v{}", retrieved_model.metadata.name, retrieved_model.metadata.version);
+    println!(
+        "✅ Retrieved model: {} v{}",
+        retrieved_model.metadata.name, retrieved_model.metadata.version
+    );
 
     // Example 3: Inference engine and batch processing
     println!("\n⚡ Example 3: Inference Engine");
     let inference_engine = Arc::new(InferenceEngine::new(5, 10)); // 5 concurrent, 10s timeout
-    inference_engine.register_model("sentiment_analyzer".to_string(), Box::new(*model_with_data)).await?;
+    inference_engine
+        .register_model("sentiment_analyzer".to_string(), Box::new(*model_with_data))
+        .await?;
 
     let inference_service = InferenceService::new(inference_engine.clone());
 
     // Single prediction
-    let single_result = inference_service.handle_predict(
-        "sentiment_analyzer",
-        serde_json::json!({"input": "I love this framework!"}),
-        None,
-    ).await?;
+    let single_result = inference_service
+        .handle_predict(
+            "sentiment_analyzer",
+            serde_json::json!({"input": "I love this framework!"}),
+            None,
+        )
+        .await?;
     println!("✅ Single prediction: {}", single_result);
 
     // Batch prediction
@@ -103,22 +116,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::json!({"input": "Absolutely terrible"}),
     ];
 
-    let batch_result = inference_service.handle_batch_predict(
-        "sentiment_analyzer",
-        batch_inputs,
-        None,
-    ).await?;
-    println!("✅ Batch prediction completed: {} results", batch_result["total"]);
+    let batch_result = inference_service
+        .handle_batch_predict("sentiment_analyzer", batch_inputs, None)
+        .await?;
+    println!(
+        "✅ Batch prediction completed: {} results",
+        batch_result["total"]
+    );
 
     // Example 4: ML Pipeline
     println!("\n🔬 Example 4: ML Pipeline");
     let pipeline_orchestrator = PipelineOrchestrator::new();
 
     // Register model for pipeline
-    pipeline_orchestrator.register_model(
-        "sentiment_analyzer:1.0.0".to_string(),
-        Box::new(*registry.get_model("sentiment_analyzer", "1.0.0").await?.metadata().clone())
-    ).await?;
+    pipeline_orchestrator
+        .register_model(
+            "sentiment_analyzer:1.0.0".to_string(),
+            Box::new(
+                *registry
+                    .get_model("sentiment_analyzer", "1.0.0")
+                    .await?
+                    .metadata()
+                    .clone(),
+            ),
+        )
+        .await?;
 
     // Create pipeline
     let pipeline_config = PipelineBuilder::new("sentiment_pipeline".to_string(), "1.0".to_string())
@@ -126,12 +148,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             name: "preprocess".to_string(),
             model_name: "sentiment_analyzer".to_string(),
             model_version: "1.0.0".to_string(),
-            input_mapping: HashMap::from([
-                ("input".to_string(), "data.input".to_string()),
-            ]),
-            output_mapping: HashMap::from([
-                ("sentiment".to_string(), "result.sentiment".to_string()),
-            ]),
+            input_mapping: HashMap::from([("input".to_string(), "data.input".to_string())]),
+            output_mapping: HashMap::from([(
+                "sentiment".to_string(),
+                "result.sentiment".to_string(),
+            )]),
             timeout_ms: Some(5000),
         })
         .input_schema(serde_json::json!({
@@ -148,8 +169,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
         .build();
 
-    pipeline_orchestrator.register_pipeline(pipeline_config).await?;
-    pipeline_orchestrator.validate_pipeline(&pipeline_orchestrator.get_pipeline("sentiment_pipeline").await?).await?;
+    pipeline_orchestrator
+        .register_pipeline(pipeline_config)
+        .await?;
+    pipeline_orchestrator
+        .validate_pipeline(
+            &pipeline_orchestrator
+                .get_pipeline("sentiment_pipeline")
+                .await?,
+        )
+        .await?;
 
     // Execute pipeline
     let pipeline_input = InferenceInput {
@@ -157,10 +186,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata: None,
     };
 
-    let pipeline_result = pipeline_orchestrator.execute_pipeline("sentiment_pipeline", pipeline_input).await?;
-    println!("✅ Pipeline execution: {} steps, {}ms total",
-             pipeline_result.steps.len(),
-             pipeline_result.total_processing_time_ms);
+    let pipeline_result = pipeline_orchestrator
+        .execute_pipeline("sentiment_pipeline", pipeline_input)
+        .await?;
+    println!(
+        "✅ Pipeline execution: {} steps, {}ms total",
+        pipeline_result.steps.len(),
+        pipeline_result.total_processing_time_ms
+    );
 
     // Example 5: Metrics and monitoring
     println!("\n📊 Example 5: Metrics & Monitoring");
@@ -179,11 +212,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata: None,
             processing_time_ms: 150,
         };
-        model_monitor.record_prediction(&test_output, Some("positive")).await;
+        model_monitor
+            .record_prediction(&test_output, Some("positive"))
+            .await;
     }
 
     let performance = model_monitor.get_performance().await;
-    println!("✅ Model performance: {} predictions", performance["total_predictions"]);
+    println!(
+        "✅ Model performance: {} predictions",
+        performance["total_predictions"]
+    );
 
     // Example 6: ML Service integration
     println!("\n🔧 Example 6: ML Service Integration");
@@ -212,7 +250,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(result) => aiviania::response::Response::json(&result),
                 Err(e) => aiviania::response::Response::json(&serde_json::json!({
                     "error": e.to_string()
-                })).with_status(500),
+                }))
+                .with_status(500),
             }
         }
     });
@@ -231,7 +270,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(result) => aiviania::response::Response::json(&result),
                 Err(e) => aiviania::response::Response::json(&serde_json::json!({
                     "error": e.to_string()
-                })).with_status(500),
+                }))
+                .with_status(500),
             }
         }
     });
@@ -256,7 +296,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(e) => aiviania::response::Response::json(&serde_json::json!({
                     "status": "error",
                     "error": e.to_string()
-                })).with_status(500),
+                }))
+                .with_status(500),
             }
         }
     });

@@ -20,43 +20,50 @@ impl RBACService {
         let mut role_permissions = HashMap::new();
 
         // Define default role permissions
-        role_permissions.insert(Role::Admin, vec![
-            Permission::CreateUser,
-            Permission::ReadUser,
-            Permission::UpdateUser,
-            Permission::DeleteUser,
-            Permission::CreateContent,
-            Permission::ReadContent,
-            Permission::UpdateContent,
-            Permission::DeleteContent,
-            Permission::ManageUsers,
-            Permission::ManageRoles,
-            Permission::ViewAnalytics,
-            Permission::SystemConfig,
-            Permission::ApiAccess,
-            Permission::WebSocketAccess,
-        ]);
+        role_permissions.insert(
+            Role::Admin,
+            vec![
+                Permission::CreateUser,
+                Permission::ReadUser,
+                Permission::UpdateUser,
+                Permission::DeleteUser,
+                Permission::CreateContent,
+                Permission::ReadContent,
+                Permission::UpdateContent,
+                Permission::DeleteContent,
+                Permission::ManageUsers,
+                Permission::ManageRoles,
+                Permission::ViewAnalytics,
+                Permission::SystemConfig,
+                Permission::ApiAccess,
+                Permission::WebSocketAccess,
+            ],
+        );
 
-        role_permissions.insert(Role::Moderator, vec![
-            Permission::CreateContent,
-            Permission::ReadContent,
-            Permission::UpdateContent,
-            Permission::DeleteContent,
-            Permission::ApiAccess,
-            Permission::WebSocketAccess,
-        ]);
+        role_permissions.insert(
+            Role::Moderator,
+            vec![
+                Permission::CreateContent,
+                Permission::ReadContent,
+                Permission::UpdateContent,
+                Permission::DeleteContent,
+                Permission::ApiAccess,
+                Permission::WebSocketAccess,
+            ],
+        );
 
-        role_permissions.insert(Role::User, vec![
-            Permission::ReadContent,
-            Permission::CreateContent,
-            Permission::UpdateContent,
-            Permission::ApiAccess,
-            Permission::WebSocketAccess,
-        ]);
+        role_permissions.insert(
+            Role::User,
+            vec![
+                Permission::ReadContent,
+                Permission::CreateContent,
+                Permission::UpdateContent,
+                Permission::ApiAccess,
+                Permission::WebSocketAccess,
+            ],
+        );
 
-        role_permissions.insert(Role::Guest, vec![
-            Permission::ReadContent,
-        ]);
+        role_permissions.insert(Role::Guest, vec![Permission::ReadContent]);
 
         Self {
             role_permissions,
@@ -103,12 +110,12 @@ impl RBACService {
     /// Get all permissions for a role
     pub fn get_role_permissions(&self, role: &Role) -> Vec<Permission> {
         match role {
-            Role::Custom(role_name) => {
-                self.custom_roles.get(role_name).cloned().unwrap_or_default()
-            }
-            _ => {
-                self.role_permissions.get(role).cloned().unwrap_or_default()
-            }
+            Role::Custom(role_name) => self
+                .custom_roles
+                .get(role_name)
+                .cloned()
+                .unwrap_or_default(),
+            _ => self.role_permissions.get(role).cloned().unwrap_or_default(),
         }
     }
 
@@ -122,7 +129,11 @@ impl RBACService {
         }
 
         // Remove duplicates
-        permissions.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect()
+        permissions
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     /// Add a custom role with specific permissions
@@ -185,22 +196,23 @@ impl RBACService {
 
     /// Validate if a permission exists
     pub fn is_valid_permission(&self, permission: &Permission) -> bool {
-        matches!(permission,
+        matches!(
+            permission,
             Permission::CreateUser
-            | Permission::ReadUser
-            | Permission::UpdateUser
-            | Permission::DeleteUser
-            | Permission::CreateContent
-            | Permission::ReadContent
-            | Permission::UpdateContent
-            | Permission::DeleteContent
-            | Permission::ManageUsers
-            | Permission::ManageRoles
-            | Permission::ViewAnalytics
-            | Permission::SystemConfig
-            | Permission::ApiAccess
-            | Permission::WebSocketAccess
-            | Permission::Custom(_)
+                | Permission::ReadUser
+                | Permission::UpdateUser
+                | Permission::DeleteUser
+                | Permission::CreateContent
+                | Permission::ReadContent
+                | Permission::UpdateContent
+                | Permission::DeleteContent
+                | Permission::ManageUsers
+                | Permission::ManageRoles
+                | Permission::ViewAnalytics
+                | Permission::SystemConfig
+                | Permission::ApiAccess
+                | Permission::WebSocketAccess
+                | Permission::Custom(_)
         )
     }
 }
@@ -219,7 +231,11 @@ mod tests {
     #[test]
     fn test_admin_has_all_permissions() {
         let rbac = RBACService::new();
-        let mut user = User::new("admin".to_string(), "admin@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "admin".to_string(),
+            "admin@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::Admin);
 
         assert!(rbac.has_permission(&user, &Permission::CreateUser));
@@ -230,7 +246,11 @@ mod tests {
     #[test]
     fn test_user_permissions() {
         let rbac = RBACService::new();
-        let mut user = User::new("user".to_string(), "user@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "user".to_string(),
+            "user@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::User);
 
         assert!(rbac.has_permission(&user, &Permission::ReadContent));
@@ -242,7 +262,11 @@ mod tests {
     #[test]
     fn test_guest_permissions() {
         let rbac = RBACService::new();
-        let mut user = User::new("guest".to_string(), "guest@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "guest".to_string(),
+            "guest@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::Guest);
 
         assert!(rbac.has_permission(&user, &Permission::ReadContent));
@@ -253,7 +277,11 @@ mod tests {
     #[test]
     fn test_direct_user_permissions() {
         let rbac = RBACService::new();
-        let mut user = User::new("user".to_string(), "user@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "user".to_string(),
+            "user@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::Guest); // Guest has limited permissions
         user.add_permission(Permission::CreateContent); // But direct permission allows this
 
@@ -265,13 +293,20 @@ mod tests {
     #[test]
     fn test_custom_role() {
         let mut rbac = RBACService::new();
-        rbac.add_custom_role("editor".to_string(), vec![
-            Permission::CreateContent,
-            Permission::ReadContent,
-            Permission::UpdateContent,
-        ]);
+        rbac.add_custom_role(
+            "editor".to_string(),
+            vec![
+                Permission::CreateContent,
+                Permission::ReadContent,
+                Permission::UpdateContent,
+            ],
+        );
 
-        let mut user = User::new("editor".to_string(), "editor@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "editor".to_string(),
+            "editor@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::Custom("editor".to_string()));
 
         assert!(rbac.has_permission(&user, &Permission::CreateContent));
@@ -283,7 +318,11 @@ mod tests {
     #[test]
     fn test_get_user_permissions() {
         let mut rbac = RBACService::new();
-        let mut user = User::new("user".to_string(), "user@example.com".to_string(), "hash".to_string());
+        let mut user = User::new(
+            "user".to_string(),
+            "user@example.com".to_string(),
+            "hash".to_string(),
+        );
         user.add_role(Role::User);
         user.add_permission(Permission::ViewAnalytics); // Direct permission
 

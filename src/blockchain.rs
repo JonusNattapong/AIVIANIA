@@ -2,10 +2,10 @@
 //!
 //! Provides functionality to connect to Ethereum nodes and perform basic operations.
 
-use web3::transports::Http;
-use web3::Web3;
-use web3::types::{Address, U256, U64};
 use std::str::FromStr;
+use web3::transports::Http;
+use web3::types::{Address, U256, U64};
+use web3::Web3;
 
 /// Blockchain client for Ethereum interactions.
 pub struct BlockchainClient {
@@ -21,7 +21,10 @@ impl BlockchainClient {
     }
 
     /// Get the balance of an Ethereum address.
-    pub async fn get_balance(&self, address: &str) -> Result<U256, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_balance(
+        &self,
+        address: &str,
+    ) -> Result<U256, Box<dyn std::error::Error + Send + Sync>> {
         let addr = Address::from_str(address)?;
         let balance = self.web3.eth().balance(addr, None).await?;
         Ok(balance)
@@ -34,7 +37,10 @@ impl BlockchainClient {
     }
 
     /// Check if an address is a contract.
-    pub async fn is_contract(&self, address: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn is_contract(
+        &self,
+        address: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let addr = Address::from_str(address)?;
         let code = self.web3.eth().code(addr, None).await?;
         Ok(!code.0.is_empty())
@@ -58,9 +64,20 @@ impl BlockchainPlugin {
 }
 
 impl crate::plugin::Plugin for BlockchainPlugin {
-    fn name(&self) -> &'static str { "blockchain" }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn init(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    fn name(&self) -> &'static str {
+        "blockchain"
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn init(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>>
+                + Send,
+        >,
+    > {
         Box::pin(async { Ok(()) })
     }
 }

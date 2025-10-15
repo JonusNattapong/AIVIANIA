@@ -1,6 +1,6 @@
 //! ML Model management and serving
 
-use super::{MlError, MlResult, types::*};
+use super::{types::*, MlError, MlResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::Path;
@@ -115,7 +115,10 @@ impl ExternalModel {
     /// Load the model (simulated)
     pub async fn load(&self) -> MlResult<()> {
         if !Path::new(&self.model_path).exists() {
-            return Err(MlError::ModelLoad(format!("Model file not found: {}", self.model_path)));
+            return Err(MlError::ModelLoad(format!(
+                "Model file not found: {}",
+                self.model_path
+            )));
         }
 
         // Simulate model loading
@@ -202,7 +205,10 @@ impl ModelFactory {
                 })?;
                 Ok(Self::create_external(metadata, model_path))
             }
-            _ => Err(MlError::Config(format!("Unknown model type: {}", config.model_type))),
+            _ => Err(MlError::Config(format!(
+                "Unknown model type: {}",
+                config.model_type
+            ))),
         }
     }
 }

@@ -3,17 +3,25 @@
 //! This module provides the Router struct that matches incoming requests to handlers.
 //! It supports simple path matching and parameter extraction.
 
-use hyper::{Request, Response, Body, StatusCode};
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::plugin::PluginManager;
 use crate::response::AivianiaResponse;
+use hyper::{Body, Request, Response, StatusCode};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Represents a route with method, path, handler, and middleware.
 pub struct Route {
     method: String,
     path: String,
-    handler: Arc<dyn Fn(Request<Body>, Arc<PluginManager>) -> std::pin::Pin<Box<dyn std::future::Future<Output = AivianiaResponse> + Send>> + Send + Sync>,
+    handler: Arc<
+        dyn Fn(
+                Request<Body>,
+                Arc<PluginManager>,
+            )
+                -> std::pin::Pin<Box<dyn std::future::Future<Output = AivianiaResponse> + Send>>
+            + Send
+            + Sync,
+    >,
     middleware: Vec<Box<dyn crate::middleware::Middleware>>,
 }
 
@@ -54,11 +62,18 @@ impl Router {
 
     /// Add a route to the router.
     pub fn add_route(&mut self, route: Route) {
-        self.routes.entry(route.method.clone()).or_insert_with(Vec::new).push(route);
+        self.routes
+            .entry(route.method.clone())
+            .or_insert_with(Vec::new)
+            .push(route);
     }
 
     /// Handle an incoming request.
-    pub async fn handle(&self, mut req: Request<Body>, plugins: Arc<PluginManager>) -> Response<Body> {
+    pub async fn handle(
+        &self,
+        mut req: Request<Body>,
+        plugins: Arc<PluginManager>,
+    ) -> Response<Body> {
         let method = req.method().as_str();
         if let Some(routes) = self.routes.get(method) {
             for route in routes {
@@ -84,7 +99,9 @@ impl Router {
             }
         }
         // 404 Not Found
-        AivianiaResponse::new(StatusCode::NOT_FOUND).body(Body::from("Not Found")).into()
+        AivianiaResponse::new(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .into()
     }
 
     /// Simple path matching (exact match for now; can be extended).
@@ -96,17 +113,25 @@ impl Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::{Request, Body, Method};
-    use std::sync::Arc;
     use crate::plugin::PluginManager;
+    use hyper::{Body, Method, Request};
+    use std::sync::Arc;
 
     // Mock middleware for testing
     struct MockMiddleware;
     impl crate::middleware::Middleware for MockMiddleware {
-        fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send>> {
+        fn before(
+            &self,
+            req: Request<Body>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send>,
+        > {
             Box::pin(async { Ok(req) })
         }
-        fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send>> {
+        fn after(
+            &self,
+            resp: Response<Body>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send>> {
             Box::pin(async { resp })
         }
     }
@@ -132,7 +157,7 @@ mod tests {
         let mut router = Router::new();
         let route = Route::new("GET", "/test", test_handler);
         router.add_route(route);
-        
+
         assert!(router.routes.contains_key("GET"));
         assert_eq!(router.routes["GET"].len(), 1);
         assert_eq!(router.routes["GET"][0].path, "/test");
@@ -140,9 +165,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_with_middleware() {
-        let route = Route::new("GET", "/test", test_handler)
-            .with_middleware(Box::new(MockMiddleware));
-        
+        let route =
+            Route::new("GET", "/test", test_handler).with_middleware(Box::new(MockMiddleware));
+
         assert_eq!(route.middleware.len(), 1);
     }
 
@@ -151,33 +176,36 @@ mod tests {
         let mut router = Router::new();
         let route = Route::new("GET", "/test", test_handler);
         router.add_route(route);
-        
+
         let req = Request::builder()
             .method(Method::GET)
             .uri("/test")
             .body(Body::empty())
             .unwrap();
-        
+
         let plugins = dummy_plugin_manager();
         let resp = router.handle(req, plugins).await;
-        
+
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers().get("content-type").unwrap(), "application/json");
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
     }
 
     #[tokio::test]
     async fn test_handle_no_matching_route() {
         let router = Router::new();
-        
+
         let req = Request::builder()
             .method(Method::GET)
             .uri("/nonexistent")
             .body(Body::empty())
             .unwrap();
-        
+
         let plugins = dummy_plugin_manager();
         let resp = router.handle(req, plugins).await;
-        
+
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 

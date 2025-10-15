@@ -1,6 +1,6 @@
-use aiviania::*;
 use aiviania::metrics;
-use hyper::{Client, Request, Body, Method};
+use aiviania::*;
+use hyper::{Body, Client, Method, Request};
 use std::sync::Arc;
 use tokio::task;
 
@@ -9,10 +9,16 @@ async fn integration_echo_and_metrics() {
     // Start server in background task
     let mut router = Router::new();
 
-    router.add_route(Route::new("POST", "/echo", |req: Request<Body>, _plugins: Arc<plugin::PluginManager>| async move {
-        let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
-        Response::new(hyper::StatusCode::OK).body(Body::from(body_bytes))
-    }));
+    router.add_route(Route::new(
+        "POST",
+        "/echo",
+        |req: Request<Body>, _plugins: Arc<plugin::PluginManager>| async move {
+            let body_bytes = hyper::body::to_bytes(req.into_body())
+                .await
+                .unwrap_or_default();
+            Response::new(hyper::StatusCode::OK).body(Body::from(body_bytes))
+        },
+    ));
 
     let server = AivianiaServer::new(router);
 

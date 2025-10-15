@@ -1,6 +1,6 @@
 use aiviania::observability;
-use hyper::{Request, Body, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Request, Response, Server};
 use std::sync::Arc;
 
 async fn metrics_handler(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }))
     });
 
-    let addr = ([127,0,0,1], 4000).into();
+    let addr = ([127, 0, 0, 1], 4000).into();
     let server = Server::bind(&addr).serve(make_svc);
     println!("Listening on http://{}", addr);
     server.await?;

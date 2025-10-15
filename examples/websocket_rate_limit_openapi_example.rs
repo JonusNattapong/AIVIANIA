@@ -6,20 +6,20 @@
 //! - OpenAPI/Swagger documentation generation
 //! - Integration with authentication and GraphQL
 
-use aiviania::*;
-use aiviania::middleware::{LoggingMiddleware, RateLimitMiddleware, RateLimitBuilder, KeyStrategy};
-use aiviania::plugin::{AIPlugin, PluginManager, WebSocketPlugin};
-use aiviania::auth::{AuthService, AuthMiddleware, login_handler, register_handler};
+use aiviania::auth::{login_handler, register_handler, AuthMiddleware, AuthService};
 use aiviania::database::{Database, DatabasePlugin};
-use aiviania::graphql::{GraphQLService, GraphQLMiddleware};
-use aiviania::email::{EmailService, EmailConfig};
-use aiviania::oauth::{OAuthService, OAuthConfig, OAuthProvider};
-use aiviania::upload::{UploadService, UploadConfig};
-use aiviania::session::SessionManager;
-use aiviania::rate_limit::RateLimitConfig;
+use aiviania::email::{EmailConfig, EmailService};
+use aiviania::graphql::{GraphQLMiddleware, GraphQLService};
+use aiviania::middleware::{KeyStrategy, LoggingMiddleware, RateLimitBuilder, RateLimitMiddleware};
+use aiviania::oauth::{OAuthConfig, OAuthProvider, OAuthService};
 use aiviania::openapi::OpenApiService;
+use aiviania::plugin::{AIPlugin, PluginManager, WebSocketPlugin};
+use aiviania::rate_limit::RateLimitConfig;
+use aiviania::session::SessionManager;
+use aiviania::upload::{UploadConfig, UploadService};
 use aiviania::websocket::WebSocketManager;
-use hyper::{Request, Body, Response, StatusCode};
+use aiviania::*;
+use hyper::{Body, Request, Response, StatusCode};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,8 +54,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     println!("🚀 Starting AIVIANIA Advanced Features Demo");
-    println!("📊 WebSocket: ws://localhost:{}/ws", config.server_addr().split(':').nth(1).unwrap_or("3000"));
-    println!("📚 API Docs: http://localhost:{}/swagger-ui/", config.server_addr());
+    println!(
+        "📊 WebSocket: ws://localhost:{}/ws",
+        config.server_addr().split(':').nth(1).unwrap_or("3000")
+    );
+    println!(
+        "📚 API Docs: http://localhost:{}/swagger-ui/",
+        config.server_addr()
+    );
     println!("🔒 Rate Limiting: 100 requests per minute per IP");
     println!("📧 Email: Configured with SMTP");
     println!("🔐 OAuth: Google/GitHub providers");
@@ -87,17 +93,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Initialize OAuth service
     let oauth_config = OAuthConfig {
-        providers: vec![
-            OAuthProvider {
-                name: "google".to_string(),
-                client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
-                client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
-                auth_url: "https://accounts.google.com/o/oauth2/auth".to_string(),
-                token_url: "https://oauth2.googleapis.com/token".to_string(),
-                redirect_url: "http://localhost:3000/auth/google/callback".to_string(),
-                scopes: vec!["openid".to_string(), "email".to_string(), "profile".to_string()],
-            },
-        ],
+        providers: vec![OAuthProvider {
+            name: "google".to_string(),
+            client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+            client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            auth_url: "https://accounts.google.com/o/oauth2/auth".to_string(),
+            token_url: "https://oauth2.googleapis.com/token".to_string(),
+            redirect_url: "http://localhost:3000/auth/google/callback".to_string(),
+            scopes: vec![
+                "openid".to_string(),
+                "email".to_string(),
+                "profile".to_string(),
+            ],
+        }],
     };
     let oauth_service = Arc::new(OAuthService::new(oauth_config));
 
@@ -127,94 +135,124 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     router.add_middleware(Box::new(rate_limit_middleware));
 
     // Health check endpoint
-    router.add_route(Route::new("GET", "/health", move |_req: Request<Body>, plugins: Arc<PluginManager>| async move {
-        let ws_connections = if let Some(ws_plugin) = plugins.get("websocket") {
-            if let Some(ws) = ws_plugin.as_any().downcast_ref::<WebSocketPlugin>() {
-                ws.manager().connection_count().await
+    router.add_route(Route::new(
+        "GET",
+        "/health",
+        move |_req: Request<Body>, plugins: Arc<PluginManager>| async move {
+            let ws_connections = if let Some(ws_plugin) = plugins.get("websocket") {
+                if let Some(ws) = ws_plugin.as_any().downcast_ref::<WebSocketPlugin>() {
+                    ws.manager().connection_count().await
+                } else {
+                    0
+                }
             } else {
                 0
-            }
-        } else {
-            0
-        };
+            };
 
-        Response::new(StatusCode::OK).json(&HealthResponse {
-            status: "healthy".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            websocket_connections: ws_connections,
-            graphql_enabled: true,
-            rate_limiting_enabled: true,
-        })
-    }));
+            Response::new(StatusCode::OK).json(&HealthResponse {
+                status: "healthy".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                websocket_connections: ws_connections,
+                graphql_enabled: true,
+                rate_limiting_enabled: true,
+            })
+        },
+    ));
 
     // API Documentation endpoints
     let openapi_service_clone = Arc::clone(&openapi_service);
-    router.add_route(Route::new("GET", "/api-docs/openapi.json", move |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        match openapi_service_clone.generate_openapi_json() {
-            Ok(json) => Response::new(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(Body::from(json)),
-            Err(_) => Response::new(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from("Failed to generate OpenAPI documentation")),
-        }
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/api-docs/openapi.json",
+        move |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            match openapi_service_clone.generate_openapi_json() {
+                Ok(json) => Response::new(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json)),
+                Err(_) => Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Failed to generate OpenAPI documentation")),
+            }
+        },
+    ));
 
     let openapi_service_clone = Arc::clone(&openapi_service);
-    router.add_route(Route::new("GET", "/swagger-ui/", move |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        Response::new(StatusCode::OK)
-            .header("content-type", "text/html")
-            .body(Body::from(openapi_service_clone.serve_swagger_ui()))
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/swagger-ui/",
+        move |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            Response::new(StatusCode::OK)
+                .header("content-type", "text/html")
+                .body(Body::from(openapi_service_clone.serve_swagger_ui()))
+        },
+    ));
 
     // WebSocket endpoint
     let websocket_plugin_clone = Arc::clone(&websocket_plugin);
-    router.add_route(Route::new("GET", "/ws", move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // Extract user ID from session (simplified)
-        let user_id = req.headers()
-            .get("x-user-id")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
+    router.add_route(Route::new(
+        "GET",
+        "/ws",
+        move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // Extract user ID from session (simplified)
+            let user_id = req
+                .headers()
+                .get("x-user-id")
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.to_string());
 
-        match websocket_plugin_clone.handle_upgrade(req, user_id).await {
-            Ok(response) => response,
-            Err(e) => {
-                eprintln!("WebSocket upgrade failed: {:?}", e);
-                Response::new(StatusCode::BAD_REQUEST)
-                    .body(Body::from("WebSocket upgrade failed"))
+            match websocket_plugin_clone.handle_upgrade(req, user_id).await {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!("WebSocket upgrade failed: {:?}", e);
+                    Response::new(StatusCode::BAD_REQUEST)
+                        .body(Body::from("WebSocket upgrade failed"))
+                }
             }
-        }
-    }));
+        },
+    ));
 
     // GraphQL endpoint
     let graphql_service_clone = Arc::clone(&graphql_service);
-    router.add_route(Route::new("GET", "/graphql", move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // For GET requests, serve GraphQL playground
-        if cfg!(feature = "utoipa") {
-            Response::new(StatusCode::OK)
-                .header("content-type", "text/html")
-                .body(Body::from(include_str!("../templates/graphql_playground.html")))
-        } else {
-            Response::new(StatusCode::OK)
-                .json(&serde_json::json!({"message": "GraphQL playground not available"}))
-        }
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/graphql",
+        move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // For GET requests, serve GraphQL playground
+            if cfg!(feature = "utoipa") {
+                Response::new(StatusCode::OK)
+                    .header("content-type", "text/html")
+                    .body(Body::from(include_str!(
+                        "../templates/graphql_playground.html"
+                    )))
+            } else {
+                Response::new(StatusCode::OK)
+                    .json(&serde_json::json!({"message": "GraphQL playground not available"}))
+            }
+        },
+    ));
 
     let graphql_service_clone = Arc::clone(&graphql_service);
-    router.add_route(Route::new("POST", "/graphql", move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // Parse GraphQL request from body
-        // This is a simplified implementation - in production you'd parse the JSON body
-        let response = serde_json::json!({
-            "data": {
-                "message": "GraphQL endpoint active",
-                "features": ["queries", "mutations", "subscriptions"]
-            }
-        });
+    router.add_route(
+        Route::new(
+            "POST",
+            "/graphql",
+            move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+                // Parse GraphQL request from body
+                // This is a simplified implementation - in production you'd parse the JSON body
+                let response = serde_json::json!({
+                    "data": {
+                        "message": "GraphQL endpoint active",
+                        "features": ["queries", "mutations", "subscriptions"]
+                    }
+                });
 
-        Response::new(StatusCode::OK).json(&response)
-    }).with_middleware(Box::new(GraphQLMiddleware::new(
-        Arc::clone(&session_manager),
-        Arc::clone(&db)
-    ))));
+                Response::new(StatusCode::OK).json(&response)
+            },
+        )
+        .with_middleware(Box::new(GraphQLMiddleware::new(
+            Arc::clone(&session_manager),
+            Arc::clone(&db),
+        ))),
+    );
 
     // Authentication endpoints
     router.add_route(Route::new("POST", "/auth/login", login_handler));
@@ -231,59 +269,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // File upload endpoint
     let upload_service_clone = Arc::clone(&upload_service);
-    router.add_route(Route::new("POST", "/upload", move |mut req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        match upload_service_clone.handle_upload(&mut req).await {
-            Ok(result) => Response::new(StatusCode::OK).json(&result),
-            Err(e) => Response::new(StatusCode::BAD_REQUEST).json(&serde_json::json!({
-                "error": "Upload failed",
-                "message": e.to_string()
-            })),
-        }
-    }));
+    router.add_route(Route::new(
+        "POST",
+        "/upload",
+        move |mut req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            match upload_service_clone.handle_upload(&mut req).await {
+                Ok(result) => Response::new(StatusCode::OK).json(&result),
+                Err(e) => Response::new(StatusCode::BAD_REQUEST).json(&serde_json::json!({
+                    "error": "Upload failed",
+                    "message": e.to_string()
+                })),
+            }
+        },
+    ));
 
     // Demo endpoint with rate limiting
-    router.add_route(Route::new("GET", "/api/demo", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        Response::new(StatusCode::OK).json(&ApiResponse {
-            message: "This endpoint is rate limited to 100 requests per minute per IP".to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        })
-    }));
+    router.add_route(Route::new(
+        "GET",
+        "/api/demo",
+        |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            Response::new(StatusCode::OK).json(&ApiResponse {
+                message: "This endpoint is rate limited to 100 requests per minute per IP"
+                    .to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            })
+        },
+    ));
 
     // WebSocket room management demo
-    router.add_route(Route::new("POST", "/api/broadcast", move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // Broadcast message to all WebSocket connections
-        let message = serde_json::json!({
-            "type": "broadcast",
-            "message": "Server broadcast message",
-            "timestamp": chrono::Utc::now().to_rfc3339()
-        });
+    router.add_route(Route::new(
+        "POST",
+        "/api/broadcast",
+        move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // Broadcast message to all WebSocket connections
+            let message = serde_json::json!({
+                "type": "broadcast",
+                "message": "Server broadcast message",
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            });
 
-        match websocket_manager.broadcast(&message.to_string()).await {
-            Ok(_) => {
-                let connection_count = websocket_manager.connection_count().await;
-                Response::new(StatusCode::OK).json(&serde_json::json!({
-                    "status": "broadcasted",
-                    "connections": connection_count
-                }))
-            },
-            Err(e) => Response::new(StatusCode::INTERNAL_SERVER_ERROR).json(&serde_json::json!({
-                "error": "Broadcast failed",
-                "message": e.to_string()
-            })),
-        }
-    }));
+            match websocket_manager.broadcast(&message.to_string()).await {
+                Ok(_) => {
+                    let connection_count = websocket_manager.connection_count().await;
+                    Response::new(StatusCode::OK).json(&serde_json::json!({
+                        "status": "broadcasted",
+                        "connections": connection_count
+                    }))
+                }
+                Err(e) => {
+                    Response::new(StatusCode::INTERNAL_SERVER_ERROR).json(&serde_json::json!({
+                        "error": "Broadcast failed",
+                        "message": e.to_string()
+                    }))
+                }
+            }
+        },
+    ));
 
     // Email demo endpoint
     let email_service_clone = Arc::clone(&email_service);
-    router.add_route(Route::new("POST", "/api/send-email", move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        // This would parse email details from request body
-        // For demo purposes, we'll just show the capability
-        Response::new(StatusCode::OK).json(&serde_json::json!({
-            "status": "Email service configured",
-            "features": ["SMTP", "Templates", "Verification", "Password Reset"],
-            "note": "Configure SMTP_USERNAME and SMTP_PASSWORD environment variables"
-        }))
-    }));
+    router.add_route(Route::new(
+        "POST",
+        "/api/send-email",
+        move |req: Request<Body>, _plugins: Arc<PluginManager>| async move {
+            // This would parse email details from request body
+            // For demo purposes, we'll just show the capability
+            Response::new(StatusCode::OK).json(&serde_json::json!({
+                "status": "Email service configured",
+                "features": ["SMTP", "Templates", "Verification", "Password Reset"],
+                "note": "Configure SMTP_USERNAME and SMTP_PASSWORD environment variables"
+            }))
+        },
+    ));
 
     // Initialize plugins
     let mut plugin_manager = PluginManager::new();

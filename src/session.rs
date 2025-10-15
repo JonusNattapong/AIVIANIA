@@ -2,16 +2,16 @@
 //!
 //! Provides session handling with configurable storage backends and secure cookie management.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::middleware::Middleware;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use cookie::{Cookie, SameSite};
+use hyper::{Body, Request, Response};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use cookie::{Cookie, SameSite};
-use hyper::{Request, Response, Body};
-use crate::middleware::Middleware;
 
 /// Session data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,12 +51,14 @@ impl SessionData {
 
     /// Set a value in the session
     pub fn set<T: Serialize>(&mut self, key: &str, value: T) {
-        self.data.insert(key.to_string(), serde_json::to_value(value).unwrap());
+        self.data
+            .insert(key.to_string(), serde_json::to_value(value).unwrap());
     }
 
     /// Get a value from the session
     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
-        self.data.get(key)
+        self.data
+            .get(key)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
@@ -75,13 +77,22 @@ impl SessionData {
 #[async_trait]
 pub trait SessionStore: Send + Sync {
     /// Store a session
-    async fn store(&self, session: &SessionData) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    async fn store(
+        &self,
+        session: &SessionData,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     /// Load a session by ID
-    async fn load(&self, session_id: &str) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn load(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Delete a session
-    async fn delete(&self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    async fn delete(
+        &self,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     /// Clean up expired sessions
     async fn cleanup_expired(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -102,18 +113,27 @@ impl MemorySessionStore {
 
 #[async_trait]
 impl SessionStore for MemorySessionStore {
-    async fn store(&self, session: &SessionData) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn store(
+        &self,
+        session: &SessionData,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut sessions = self.sessions.write().await;
         sessions.insert(session.id.clone(), session.clone());
         Ok(())
     }
 
-    async fn load(&self, session_id: &str) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn load(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
         let sessions = self.sessions.read().await;
         Ok(sessions.get(session_id).cloned())
     }
 
-    async fn delete(&self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn delete(
+        &self,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut sessions = self.sessions.write().await;
         sessions.remove(session_id);
         Ok(())
@@ -144,7 +164,10 @@ impl RedisSessionStore {
 #[cfg(feature = "redis")]
 #[async_trait]
 impl SessionStore for RedisSessionStore {
-    async fn store(&self, session: &SessionData) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn store(
+        &self,
+        session: &SessionData,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let key = format!("session:{}", session.id);
         let data = serde_json::to_string(session)?;
@@ -159,7 +182,10 @@ impl SessionStore for RedisSessionStore {
         Ok(())
     }
 
-    async fn load(&self, session_id: &str) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn load(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let key = format!("session:{}", session_id);
 
@@ -179,7 +205,10 @@ impl SessionStore for RedisSessionStore {
         }
     }
 
-    async fn delete(&self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn delete(
+        &self,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let key = format!("session:{}", session_id);
         redis::cmd("DEL").arg(&key).query_async(&mut conn).await?;
@@ -199,24 +228,35 @@ pub struct DatabaseSessionStore {
 
 impl DatabaseSessionStore {
     pub fn new(database: Arc<dyn crate::database::DatabaseConnection>) -> Self {
-        Self { _database: database }
+        Self {
+            _database: database,
+        }
     }
 }
 
 #[async_trait]
 impl SessionStore for DatabaseSessionStore {
-    async fn store(&self, _session: &SessionData) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn store(
+        &self,
+        _session: &SessionData,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // This would require extending the database trait to support sessions
         // For now, we'll implement a basic version that could be extended
         // In a real implementation, you'd add session table operations to DatabaseConnection
         Err("Database session store not fully implemented - requires schema changes".into())
     }
 
-    async fn load(&self, _session_id: &str) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn load(
+        &self,
+        _session_id: &str,
+    ) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
         Err("Database session store not fully implemented - requires schema changes".into())
     }
 
-    async fn delete(&self, _session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn delete(
+        &self,
+        _session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Err("Database session store not fully implemented - requires schema changes".into())
     }
 
@@ -258,7 +298,13 @@ impl SessionManager {
     }
 
     /// Configure cookie settings
-    pub fn with_cookie_config(mut self, name: &str, secure: bool, http_only: bool, same_site: SameSite) -> Self {
+    pub fn with_cookie_config(
+        mut self,
+        name: &str,
+        secure: bool,
+        http_only: bool,
+        same_site: SameSite,
+    ) -> Self {
         self.cookie_name = name.to_string();
         self.secure = secure;
         self.http_only = http_only;
@@ -267,14 +313,19 @@ impl SessionManager {
     }
 
     /// Create a new session
-    pub async fn create_session(&self) -> Result<SessionData, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn create_session(
+        &self,
+    ) -> Result<SessionData, Box<dyn std::error::Error + Send + Sync>> {
         let session = SessionData::new();
         self.store.store(&session).await?;
         Ok(session)
     }
 
     /// Get session from request cookies
-    pub async fn get_session(&self, req: &Request<Body>) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_session(
+        &self,
+        req: &Request<Body>,
+    ) -> Result<Option<SessionData>, Box<dyn std::error::Error + Send + Sync>> {
         if let Some(cookie_header) = req.headers().get("cookie") {
             if let Ok(cookie_str) = cookie_header.to_str() {
                 for cookie in Cookie::split_parse(cookie_str) {
@@ -290,7 +341,11 @@ impl SessionManager {
     }
 
     /// Save session and return response with session cookie
-    pub async fn save_session(&self, mut response: Response<Body>, session: &SessionData) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn save_session(
+        &self,
+        mut response: Response<Body>,
+        session: &SessionData,
+    ) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
         self.store.store(session).await?;
 
         let mut cookie = Cookie::new(self.cookie_name.clone(), session.id.clone());
@@ -303,16 +358,19 @@ impl SessionManager {
         let max_age = (session.expires_at - Utc::now()).num_seconds().max(0);
         cookie.set_max_age(cookie::time::Duration::seconds(max_age));
 
-        response.headers_mut().insert(
-            "set-cookie",
-            cookie.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert("set-cookie", cookie.to_string().parse().unwrap());
 
         Ok(response)
     }
 
     /// Delete session and return response with expired cookie
-    pub async fn destroy_session(&self, mut response: Response<Body>, session_id: &str) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn destroy_session(
+        &self,
+        mut response: Response<Body>,
+        session_id: &str,
+    ) -> Result<Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
         self.store.delete(session_id).await?;
 
         let mut cookie = Cookie::new(self.cookie_name.clone(), "");
@@ -322,10 +380,9 @@ impl SessionManager {
         cookie.set_path("/");
         cookie.set_max_age(cookie::time::Duration::seconds(0));
 
-        response.headers_mut().insert(
-            "set-cookie",
-            cookie.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert("set-cookie", cookie.to_string().parse().unwrap());
 
         Ok(response)
     }
@@ -348,7 +405,12 @@ impl SessionMiddleware {
 }
 
 impl Middleware for SessionMiddleware {
-    fn before(&self, mut req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+    fn before(
+        &self,
+        mut req: Request<Body>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>,
+    > {
         let manager = self.manager.clone();
         Box::pin(async move {
             // Load session from cookies and attach to request extensions
@@ -386,7 +448,10 @@ pub mod helpers {
     }
 
     /// Create a new session for the request
-    pub async fn create_session(manager: &SessionManager, req: &mut Request<Body>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn create_session(
+        manager: &SessionManager,
+        req: &mut Request<Body>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let session = manager.create_session().await?;
         req.extensions_mut().insert(session);
         Ok(())

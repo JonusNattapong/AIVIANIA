@@ -171,7 +171,11 @@ impl<S: SessionStore> SessionManager<S> {
             user_id: user.id.clone(),
             username: user.username.clone(),
             roles: user.roles.iter().map(|r| format!("{:?}", r)).collect(),
-            permissions: user.permissions.iter().map(|p| format!("{:?}", p)).collect(),
+            permissions: user
+                .permissions
+                .iter()
+                .map(|p| format!("{:?}", p))
+                .collect(),
             created_at: now,
             last_accessed: now,
             expires_at,
@@ -212,9 +216,14 @@ impl<S: SessionStore> SessionManager<S> {
     }
 
     /// Extend session expiration
-    pub async fn extend_session(&self, session_id: &str, additional_seconds: u64) -> Result<(), SessionError> {
+    pub async fn extend_session(
+        &self,
+        session_id: &str,
+        additional_seconds: u64,
+    ) -> Result<(), SessionError> {
         if let Some(mut session) = self.store.get(session_id).await? {
-            session.expires_at = session.expires_at + chrono::Duration::seconds(additional_seconds as i64);
+            session.expires_at =
+                session.expires_at + chrono::Duration::seconds(additional_seconds as i64);
             self.store.store(session).await?;
         }
         Ok(())
@@ -267,7 +276,11 @@ mod tests {
     #[tokio::test]
     async fn test_session_creation() {
         let manager = SessionManager::default();
-        let user = User::new("testuser".to_string(), "test@example.com".to_string(), "hash".to_string());
+        let user = User::new(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "hash".to_string(),
+        );
 
         let session = manager.create_session(&user).await.unwrap();
         assert_eq!(session.user_id, user.id);
@@ -278,10 +291,18 @@ mod tests {
     #[tokio::test]
     async fn test_session_retrieval() {
         let manager = SessionManager::default();
-        let user = User::new("testuser".to_string(), "test@example.com".to_string(), "hash".to_string());
+        let user = User::new(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "hash".to_string(),
+        );
 
         let created_session = manager.create_session(&user).await.unwrap();
-        let retrieved_session = manager.get_session(&created_session.id).await.unwrap().unwrap();
+        let retrieved_session = manager
+            .get_session(&created_session.id)
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(created_session.id, retrieved_session.id);
         assert_eq!(created_session.user_id, retrieved_session.user_id);
@@ -290,7 +311,11 @@ mod tests {
     #[tokio::test]
     async fn test_session_deletion() {
         let manager = SessionManager::default();
-        let user = User::new("testuser".to_string(), "test@example.com".to_string(), "hash".to_string());
+        let user = User::new(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "hash".to_string(),
+        );
 
         let session = manager.create_session(&user).await.unwrap();
         assert!(manager.validate_session(&session.id).await.unwrap());
@@ -306,7 +331,11 @@ mod tests {
             ..Default::default()
         };
         let manager = SessionManager::new(config);
-        let user = User::new("testuser".to_string(), "test@example.com".to_string(), "hash".to_string());
+        let user = User::new(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "hash".to_string(),
+        );
 
         let session = manager.create_session(&user).await.unwrap();
 

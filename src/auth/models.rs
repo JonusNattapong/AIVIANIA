@@ -212,7 +212,11 @@ impl User {
             username: self.username.clone(),
             email: self.email.clone(),
             roles: self.roles.iter().map(|r| format!("{:?}", r)).collect(),
-            permissions: self.permissions.iter().map(|p| format!("{:?}", p)).collect(),
+            permissions: self
+                .permissions
+                .iter()
+                .map(|p| format!("{:?}", p))
+                .collect(),
         }
     }
 }

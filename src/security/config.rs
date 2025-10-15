@@ -41,18 +41,22 @@ impl SecurityConfig {
 
     /// Load configuration from file
     pub async fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, SecurityError> {
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| SecurityError::ConfigError(format!("Failed to read config file: {}", e)))?;
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            SecurityError::ConfigError(format!("Failed to read config file: {}", e))
+        })?;
 
         serde_json::from_str(&content)
             .map_err(|e| SecurityError::ConfigError(format!("Failed to parse config: {}", e)))
     }
 
     /// Save configuration to file
-    pub async fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SecurityError> {
-        let content = serde_json::to_string_pretty(self)
-            .map_err(|e| SecurityError::ConfigError(format!("Failed to serialize config: {}", e)))?;
+    pub async fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> Result<(), SecurityError> {
+        let content = serde_json::to_string_pretty(self).map_err(|e| {
+            SecurityError::ConfigError(format!("Failed to serialize config: {}", e))
+        })?;
 
         tokio::fs::write(path, content)
             .await
@@ -96,7 +100,9 @@ impl CsrfConfig {
             enabled: std::env::var("AIVIANIA_CSRF_ENABLED")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_ENABLED value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_ENABLED value".to_string())
+                })?,
             token_name: std::env::var("AIVIANIA_CSRF_TOKEN_NAME")
                 .unwrap_or_else(|_| "csrf_token".to_string()),
             cookie_name: std::env::var("AIVIANIA_CSRF_COOKIE_NAME")
@@ -106,23 +112,33 @@ impl CsrfConfig {
             token_length: std::env::var("AIVIANIA_CSRF_TOKEN_LENGTH")
                 .unwrap_or_else(|_| "32".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_TOKEN_LENGTH value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_TOKEN_LENGTH value".to_string())
+                })?,
             token_lifetime: std::env::var("AIVIANIA_CSRF_TOKEN_LIFETIME")
                 .unwrap_or_else(|_| "3600".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_TOKEN_LIFETIME value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_TOKEN_LIFETIME value".to_string())
+                })?,
             secure_cookie: std::env::var("AIVIANIA_CSRF_SECURE_COOKIE")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_SECURE_COOKIE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_SECURE_COOKIE value".to_string())
+                })?,
             http_only_cookie: std::env::var("AIVIANIA_CSRF_HTTP_ONLY_COOKIE")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_HTTP_ONLY_COOKIE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_HTTP_ONLY_COOKIE value".to_string())
+                })?,
             same_site: std::env::var("AIVIANIA_CSRF_SAME_SITE")
                 .unwrap_or_else(|_| "strict".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CSRF_SAME_SITE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CSRF_SAME_SITE value".to_string())
+                })?,
         })
     }
 }
@@ -143,7 +159,10 @@ impl std::str::FromStr for SameSitePolicy {
             "strict" => Ok(Self::Strict),
             "lax" => Ok(Self::Lax),
             "none" => Ok(Self::None),
-            _ => Err(SecurityError::ConfigError(format!("Invalid same site policy: {}", s))),
+            _ => Err(SecurityError::ConfigError(format!(
+                "Invalid same site policy: {}",
+                s
+            ))),
         }
     }
 }
@@ -180,7 +199,7 @@ impl Default for CorsConfig {
             ],
             exposed_headers: vec![],
             allow_credentials: false,
-            max_age: Some(86400), // 24 hours
+            max_age: Some(86400),           // 24 hours
             preflight_cache_duration: 3600, // 1 hour
         }
     }
@@ -210,7 +229,9 @@ impl CorsConfig {
             enabled: std::env::var("AIVIANIA_CORS_ENABLED")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CORS_ENABLED value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CORS_ENABLED value".to_string())
+                })?,
             allowed_origins,
             allowed_methods,
             allowed_headers,
@@ -218,16 +239,24 @@ impl CorsConfig {
             allow_credentials: std::env::var("AIVIANIA_CORS_ALLOW_CREDENTIALS")
                 .unwrap_or_else(|_| "false".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CORS_ALLOW_CREDENTIALS value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CORS_ALLOW_CREDENTIALS value".to_string())
+                })?,
             max_age: std::env::var("AIVIANIA_CORS_MAX_AGE")
                 .ok()
                 .map(|s| s.parse())
                 .transpose()
-                .map_err(|_| SecurityError::ConfigError("Invalid CORS_MAX_AGE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid CORS_MAX_AGE value".to_string())
+                })?,
             preflight_cache_duration: std::env::var("AIVIANIA_CORS_PREFLIGHT_CACHE_DURATION")
                 .unwrap_or_else(|_| "3600".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid CORS_PREFLIGHT_CACHE_DURATION value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid CORS_PREFLIGHT_CACHE_DURATION value".to_string(),
+                    )
+                })?,
         })
     }
 }
@@ -264,25 +293,35 @@ impl SecurityHeadersConfig {
             enabled: std::env::var("AIVIANIA_HEADERS_ENABLED")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid HEADERS_ENABLED value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid HEADERS_ENABLED value".to_string())
+                })?,
             preset: std::env::var("AIVIANIA_HEADERS_PRESET")
                 .unwrap_or_else(|_| "strict".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid HEADERS_PRESET value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid HEADERS_PRESET value".to_string())
+                })?,
             custom_headers: HashMap::new(), // Not configurable via env yet
             csp_directives: HashMap::new(), // Not configurable via env yet
             hsts_max_age: std::env::var("AIVIANIA_HSTS_MAX_AGE")
                 .unwrap_or_else(|_| "31536000".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid HSTS_MAX_AGE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid HSTS_MAX_AGE value".to_string())
+                })?,
             hsts_include_subdomains: std::env::var("AIVIANIA_HSTS_INCLUDE_SUBDOMAINS")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid HSTS_INCLUDE_SUBDOMAINS value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid HSTS_INCLUDE_SUBDOMAINS value".to_string())
+                })?,
             hsts_preload: std::env::var("AIVIANIA_HSTS_PRELOAD")
                 .unwrap_or_else(|_| "false".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid HSTS_PRELOAD value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid HSTS_PRELOAD value".to_string())
+                })?,
         })
     }
 }
@@ -305,7 +344,10 @@ impl std::str::FromStr for SecurityHeadersPreset {
             "permissive" => Ok(Self::Permissive),
             "api" => Ok(Self::Api),
             "custom" => Ok(Self::Custom),
-            _ => Err(SecurityError::ConfigError(format!("Invalid security headers preset: {}", s))),
+            _ => Err(SecurityError::ConfigError(format!(
+                "Invalid security headers preset: {}",
+                s
+            ))),
         }
     }
 }
@@ -350,32 +392,52 @@ impl ValidationConfig {
             enabled: std::env::var("AIVIANIA_VALIDATION_ENABLED")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_ENABLED value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid VALIDATION_ENABLED value".to_string())
+                })?,
             max_field_length: std::env::var("AIVIANIA_VALIDATION_MAX_FIELD_LENGTH")
                 .unwrap_or_else(|_| "10000".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_MAX_FIELD_LENGTH value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid VALIDATION_MAX_FIELD_LENGTH value".to_string(),
+                    )
+                })?,
             max_file_size: std::env::var("AIVIANIA_VALIDATION_MAX_FILE_SIZE")
                 .unwrap_or_else(|_| "10485760".to_string()) // 10MB
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_MAX_FILE_SIZE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid VALIDATION_MAX_FILE_SIZE value".to_string())
+                })?,
             allowed_file_types: std::env::var("AIVIANIA_VALIDATION_ALLOWED_FILE_TYPES")
-                .unwrap_or_else(|_| "image/jpeg,image/png,image/gif,application/pdf,text/plain".to_string())
+                .unwrap_or_else(|_| {
+                    "image/jpeg,image/png,image/gif,application/pdf,text/plain".to_string()
+                })
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
             sanitize_html: std::env::var("AIVIANIA_VALIDATION_SANITIZE_HTML")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_SANITIZE_HTML value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid VALIDATION_SANITIZE_HTML value".to_string())
+                })?,
             sql_injection_protection: std::env::var("AIVIANIA_VALIDATION_SQL_INJECTION_PROTECTION")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_SQL_INJECTION_PROTECTION value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid VALIDATION_SQL_INJECTION_PROTECTION value".to_string(),
+                    )
+                })?,
             xss_protection: std::env::var("AIVIANIA_VALIDATION_XSS_PROTECTION")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid VALIDATION_XSS_PROTECTION value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid VALIDATION_XSS_PROTECTION value".to_string(),
+                    )
+                })?,
             custom_rules: HashMap::new(), // Not configurable via env yet
         })
     }
@@ -387,7 +449,7 @@ pub struct RateLimitingConfig {
     pub enabled: bool,
     pub requests_per_minute: u32,
     pub burst_limit: u32,
-    pub block_duration: u64, // seconds
+    pub block_duration: u64,    // seconds
     pub whitelist: Vec<String>, // IP addresses
     pub blacklist: Vec<String>, // IP addresses
 }
@@ -411,19 +473,31 @@ impl RateLimitingConfig {
             enabled: std::env::var("AIVIANIA_RATE_LIMIT_ENABLED")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid RATE_LIMIT_ENABLED value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid RATE_LIMIT_ENABLED value".to_string())
+                })?,
             requests_per_minute: std::env::var("AIVIANIA_RATE_LIMIT_REQUESTS_PER_MINUTE")
                 .unwrap_or_else(|_| "60".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid RATE_LIMIT_REQUESTS_PER_MINUTE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid RATE_LIMIT_REQUESTS_PER_MINUTE value".to_string(),
+                    )
+                })?,
             burst_limit: std::env::var("AIVIANIA_RATE_LIMIT_BURST_LIMIT")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid RATE_LIMIT_BURST_LIMIT value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid RATE_LIMIT_BURST_LIMIT value".to_string())
+                })?,
             block_duration: std::env::var("AIVIANIA_RATE_LIMIT_BLOCK_DURATION")
                 .unwrap_or_else(|_| "300".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid RATE_LIMIT_BLOCK_DURATION value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError(
+                        "Invalid RATE_LIMIT_BLOCK_DURATION value".to_string(),
+                    )
+                })?,
             whitelist: std::env::var("AIVIANIA_RATE_LIMIT_WHITELIST")
                 .unwrap_or_default()
                 .split(',')
@@ -485,15 +559,21 @@ impl LoggingConfig {
             max_file_size: std::env::var("AIVIANIA_LOG_MAX_FILE_SIZE")
                 .unwrap_or_else(|_| "10485760".to_string()) // 10MB
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid LOG_MAX_FILE_SIZE value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid LOG_MAX_FILE_SIZE value".to_string())
+                })?,
             max_files: std::env::var("AIVIANIA_LOG_MAX_FILES")
                 .unwrap_or_else(|_| "5".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid LOG_MAX_FILES value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid LOG_MAX_FILES value".to_string())
+                })?,
             console_output: std::env::var("AIVIANIA_LOG_CONSOLE_OUTPUT")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
-                .map_err(|_| SecurityError::ConfigError("Invalid LOG_CONSOLE_OUTPUT value".to_string()))?,
+                .map_err(|_| {
+                    SecurityError::ConfigError("Invalid LOG_CONSOLE_OUTPUT value".to_string())
+                })?,
         })
     }
 }
@@ -516,7 +596,10 @@ impl std::str::FromStr for LogLevel {
             "info" => Ok(Self::Info),
             "warn" => Ok(Self::Warn),
             "error" => Ok(Self::Error),
-            _ => Err(SecurityError::ConfigError(format!("Invalid log level: {}", s))),
+            _ => Err(SecurityError::ConfigError(format!(
+                "Invalid log level: {}",
+                s
+            ))),
         }
     }
 }
@@ -535,7 +618,10 @@ impl std::str::FromStr for LogFormat {
         match s.to_lowercase().as_str() {
             "json" => Ok(Self::Json),
             "text" => Ok(Self::Text),
-            _ => Err(SecurityError::ConfigError(format!("Invalid log format: {}", s))),
+            _ => Err(SecurityError::ConfigError(format!(
+                "Invalid log format: {}",
+                s
+            ))),
         }
     }
 }

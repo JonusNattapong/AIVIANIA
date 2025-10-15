@@ -17,7 +17,10 @@ pub trait Plugin: Any + Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Initialize the plugin.
-    fn init(&self) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    fn init(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>>
+    {
         Box::pin(async { Ok(()) })
     }
 }
@@ -61,7 +64,12 @@ impl AIPlugin {
     }
 
     /// Call AI API with the given prompt.
-    pub fn call_ai(&self, prompt: &str) -> Pin<Box<dyn Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    pub fn call_ai(
+        &self,
+        prompt: &str,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>,
+    > {
         let prompt = prompt.to_string();
         let api_key = self.api_key.clone();
         Box::pin(async move {
@@ -92,13 +100,18 @@ impl AIPlugin {
 }
 
 impl Plugin for AIPlugin {
-    fn as_any(&self) -> &dyn Any { self }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 
     fn name(&self) -> &'static str {
         "ai"
     }
 
-    fn init(&self) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    fn init(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send>>
+    {
         Box::pin(async {
             println!("Initializing AI Plugin");
             Ok(())

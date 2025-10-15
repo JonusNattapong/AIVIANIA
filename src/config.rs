@@ -3,8 +3,8 @@
 //! This module provides configuration loading from environment variables,
 //! YAML/TOML files, and command-line arguments.
 
-use serde::{Deserialize, Serialize};
 use config::{Config, ConfigError, File};
+use serde::{Deserialize, Serialize};
 
 /// Main application configuration structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]

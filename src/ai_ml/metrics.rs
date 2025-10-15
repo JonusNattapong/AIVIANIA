@@ -1,6 +1,6 @@
 //! ML Metrics and monitoring
 
-use super::{MlResult, types::*};
+use super::{types::*, MlResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -33,7 +33,10 @@ impl MetricsCollector {
     /// Record a histogram value
     pub async fn record_histogram(&self, name: &str, value: f64) {
         let mut histograms = self.histograms.write().await;
-        histograms.entry(name.to_string()).or_insert_with(Vec::new).push(value);
+        histograms
+            .entry(name.to_string())
+            .or_insert_with(Vec::new)
+            .push(value);
     }
 
     /// Set a gauge value
@@ -45,15 +48,20 @@ impl MetricsCollector {
     /// Record inference metrics
     pub async fn record_inference(&self, model_name: &str, output: &InferenceOutput) {
         // Increment total inferences
-        self.increment_counter(&format!("inference.{}.total", model_name), 1).await;
+        self.increment_counter(&format!("inference.{}.total", model_name), 1)
+            .await;
 
         // Record processing time
-        self.record_histogram(&format!("inference.{}.processing_time", model_name),
-                            output.processing_time_ms as f64).await;
+        self.record_histogram(
+            &format!("inference.{}.processing_time", model_name),
+            output.processing_time_ms as f64,
+        )
+        .await;
 
         // Record confidence if available
         if let Some(confidence) = output.confidence {
-            self.record_histogram(&format!("inference.{}.confidence", model_name), confidence).await;
+            self.record_histogram(&format!("inference.{}.confidence", model_name), confidence)
+                .await;
         }
     }
 
@@ -62,32 +70,56 @@ impl MetricsCollector {
         let pipeline_name = &result.pipeline_name;
 
         // Increment pipeline executions
-        self.increment_counter(&format!("pipeline.{}.executions", pipeline_name), 1).await;
+        self.increment_counter(&format!("pipeline.{}.executions", pipeline_name), 1)
+            .await;
 
         // Record success/failure
         if result.success {
-            self.increment_counter(&format!("pipeline.{}.success", pipeline_name), 1).await;
+            self.increment_counter(&format!("pipeline.{}.success", pipeline_name), 1)
+                .await;
         } else {
-            self.increment_counter(&format!("pipeline.{}.failure", pipeline_name), 1).await;
+            self.increment_counter(&format!("pipeline.{}.failure", pipeline_name), 1)
+                .await;
         }
 
         // Record total processing time
-        self.record_histogram(&format!("pipeline.{}.processing_time", pipeline_name),
-                            result.total_processing_time_ms as f64).await;
+        self.record_histogram(
+            &format!("pipeline.{}.processing_time", pipeline_name),
+            result.total_processing_time_ms as f64,
+        )
+        .await;
 
         // Record step metrics
         for step in &result.steps {
             let step_name = &step.step_name;
-            self.increment_counter(&format!("pipeline.{}.step.{}.executions", pipeline_name, step_name), 1).await;
+            self.increment_counter(
+                &format!("pipeline.{}.step.{}.executions", pipeline_name, step_name),
+                1,
+            )
+            .await;
 
             if step.success {
-                self.increment_counter(&format!("pipeline.{}.step.{}.success", pipeline_name, step_name), 1).await;
+                self.increment_counter(
+                    &format!("pipeline.{}.step.{}.success", pipeline_name, step_name),
+                    1,
+                )
+                .await;
             } else {
-                self.increment_counter(&format!("pipeline.{}.step.{}.failure", pipeline_name, step_name), 1).await;
+                self.increment_counter(
+                    &format!("pipeline.{}.step.{}.failure", pipeline_name, step_name),
+                    1,
+                )
+                .await;
             }
 
-            self.record_histogram(&format!("pipeline.{}.step.{}.processing_time", pipeline_name, step_name),
-                                step.output.processing_time_ms as f64).await;
+            self.record_histogram(
+                &format!(
+                    "pipeline.{}.step.{}.processing_time",
+                    pipeline_name, step_name
+                ),
+                step.output.processing_time_ms as f64,
+            )
+            .await;
         }
     }
 
@@ -245,28 +277,56 @@ impl ModelMonitor {
     /// Record prediction
     pub async fn record_prediction(&self, output: &InferenceOutput, expected_label: Option<&str>) {
         // Record basic metrics
-        self.metrics.record_inference(&self.model_name, output).await;
+        self.metrics
+            .record_inference(&self.model_name, output)
+            .await;
 
         // Record accuracy if expected label provided
-        if let (Some(expected), Some(predicted)) = (expected_label, output.result.get("prediction")) {
+        if let (Some(expected), Some(predicted)) = (expected_label, output.result.get("prediction"))
+        {
             let correct = predicted == expected;
             let accuracy_key = format!("model.{}.{}.accuracy", self.model_name, self.version);
 
             if correct {
-                self.metrics.increment_counter(&format!("{}_correct", accuracy_key), 1).await;
+                self.metrics
+                    .increment_counter(&format!("{}_correct", accuracy_key), 1)
+                    .await;
             }
-            self.metrics.increment_counter(&format!("{}_total", accuracy_key), 1).await;
+            self.metrics
+                .increment_counter(&format!("{}_total", accuracy_key), 1)
+                .await;
         }
     }
 
     /// Get model performance metrics
     pub async fn get_performance(&self) -> serde_json::Value {
-        let total_predictions = self.metrics.get_counter(&format!("inference.{}.total", self.model_name)).await;
-        let processing_time_stats = self.metrics.get_histogram_stats(&format!("inference.{}.processing_time", self.model_name)).await;
-        let confidence_stats = self.metrics.get_histogram_stats(&format!("inference.{}.confidence", self.model_name)).await;
+        let total_predictions = self
+            .metrics
+            .get_counter(&format!("inference.{}.total", self.model_name))
+            .await;
+        let processing_time_stats = self
+            .metrics
+            .get_histogram_stats(&format!("inference.{}.processing_time", self.model_name))
+            .await;
+        let confidence_stats = self
+            .metrics
+            .get_histogram_stats(&format!("inference.{}.confidence", self.model_name))
+            .await;
 
-        let accuracy_correct = self.metrics.get_counter(&format!("model.{}.{}.accuracy_correct", self.model_name, self.version)).await;
-        let accuracy_total = self.metrics.get_counter(&format!("model.{}.{}.accuracy_total", self.model_name, self.version)).await;
+        let accuracy_correct = self
+            .metrics
+            .get_counter(&format!(
+                "model.{}.{}.accuracy_correct",
+                self.model_name, self.version
+            ))
+            .await;
+        let accuracy_total = self
+            .metrics
+            .get_counter(&format!(
+                "model.{}.{}.accuracy_total",
+                self.model_name, self.version
+            ))
+            .await;
         let accuracy = if accuracy_total > 0 {
             accuracy_correct as f64 / accuracy_total as f64
         } else {

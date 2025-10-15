@@ -1,8 +1,8 @@
 //! CSRF (Cross-Site Request Forgery) Protection
 
-use super::{SecurityError, SecurityEvent, SecurityResult, SecurityMiddleware};
-use hyper::{Request, Body};
+use super::{SecurityError, SecurityEvent, SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
+use hyper::{Body, Request};
 use rand::Rng;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -36,9 +36,7 @@ impl CsrfProtection {
     /// Generate a new CSRF token
     pub fn generate_token() -> String {
         let mut rng = rand::thread_rng();
-        let token: String = (0..32)
-            .map(|_| format!("{:x}", rng.gen::<u8>()))
-            .collect();
+        let token: String = (0..32).map(|_| format!("{:x}", rng.gen::<u8>())).collect();
         token
     }
 
@@ -122,17 +120,21 @@ impl SecurityMiddleware for CsrfProtection {
             Some(token) => token,
             None => {
                 // Log CSRF attempt
-                        let event = SecurityEvent::CsrfAttackAttempt {
-                            ip: "unknown".to_string(), // Would extract from request in real impl
-                            user_agent: request.headers().get("user-agent")
-                                .and_then(|h| h.to_str().ok())
-                                .map(|s| s.to_string()),
-                            url: request.uri().to_string(),
-                            timestamp: chrono::Utc::now(),
-                        };
+                let event = SecurityEvent::CsrfAttackAttempt {
+                    ip: "unknown".to_string(), // Would extract from request in real impl
+                    user_agent: request
+                        .headers()
+                        .get("user-agent")
+                        .and_then(|h| h.to_str().ok())
+                        .map(|s| s.to_string()),
+                    url: request.uri().to_string(),
+                    timestamp: chrono::Utc::now(),
+                };
                 event_logger.log_event(event).await;
 
-                return Err(SecurityError::CsrfValidation("CSRF token missing".to_string()));
+                return Err(SecurityError::CsrfValidation(
+                    "CSRF token missing".to_string(),
+                ));
             }
         };
 
@@ -141,7 +143,9 @@ impl SecurityMiddleware for CsrfProtection {
             // Log CSRF attempt
             let event = SecurityEvent::CsrfAttackAttempt {
                 ip: "unknown".to_string(),
-                user_agent: request.headers().get("user-agent")
+                user_agent: request
+                    .headers()
+                    .get("user-agent")
                     .and_then(|h| h.to_str().ok())
                     .map(|s| s.to_string()),
                 url: request.uri().to_string(),
@@ -149,7 +153,9 @@ impl SecurityMiddleware for CsrfProtection {
             };
             event_logger.log_event(event).await;
 
-            return Err(SecurityError::CsrfValidation("Invalid CSRF token".to_string()));
+            return Err(SecurityError::CsrfValidation(
+                "Invalid CSRF token".to_string(),
+            ));
         }
 
         // Remove used token (one-time use)
@@ -229,7 +235,10 @@ impl DoubleSubmitCookieProtection {
 
     /// Extract token from header
     fn extract_header_token(&self, request: &Request<Body>) -> Option<String> {
-        request.headers().get(&self.header_name).and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        request
+            .headers()
+            .get(&self.header_name)
+            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
     }
 }
 
@@ -241,7 +250,10 @@ impl SecurityMiddleware for DoubleSubmitCookieProtection {
         event_logger: Arc<super::SecurityEventLogger>,
     ) -> SecurityResult<Request<Body>> {
         // Skip CSRF check for exempt methods
-        if self.exempt_methods.contains(&request.method().as_str().to_string()) {
+        if self
+            .exempt_methods
+            .contains(&request.method().as_str().to_string())
+        {
             return Ok(request);
         }
 
@@ -254,7 +266,9 @@ impl SecurityMiddleware for DoubleSubmitCookieProtection {
                     // Log CSRF attempt
                     let event = SecurityEvent::CsrfAttackAttempt {
                         ip: "unknown".to_string(),
-                        user_agent: request.headers().get("user-agent")
+                        user_agent: request
+                            .headers()
+                            .get("user-agent")
                             .and_then(|h| h.to_str().ok())
                             .map(|s| s.to_string()),
                         url: request.uri().to_string(),
@@ -262,14 +276,18 @@ impl SecurityMiddleware for DoubleSubmitCookieProtection {
                     };
                     event_logger.log_event(event).await;
 
-                    return Err(SecurityError::CsrfValidation("CSRF token mismatch".to_string()));
+                    return Err(SecurityError::CsrfValidation(
+                        "CSRF token mismatch".to_string(),
+                    ));
                 }
             }
             _ => {
                 // Log CSRF attempt
                 let event = SecurityEvent::CsrfAttackAttempt {
                     ip: "unknown".to_string(),
-                    user_agent: request.headers().get("user-agent")
+                    user_agent: request
+                        .headers()
+                        .get("user-agent")
                         .and_then(|h| h.to_str().ok())
                         .map(|s| s.to_string()),
                     url: request.uri().to_string(),
@@ -277,7 +295,9 @@ impl SecurityMiddleware for DoubleSubmitCookieProtection {
                 };
                 event_logger.log_event(event).await;
 
-                return Err(SecurityError::CsrfValidation("CSRF tokens missing".to_string()));
+                return Err(SecurityError::CsrfValidation(
+                    "CSRF tokens missing".to_string(),
+                ));
             }
         }
 

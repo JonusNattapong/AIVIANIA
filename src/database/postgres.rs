@@ -33,18 +33,20 @@ impl PostgresConnection {
 #[async_trait]
 impl DatabaseConnection for PostgresConnection {
     async fn execute(&self, query: &str, params: Vec<serde_json::Value>) -> Result<u64, DatabaseError> {
-        let params = convert_params(params);
+        let boxed = convert_params(params);
+        let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = boxed.iter().map(|b| &**b).collect();
 
-        let result = self.client.execute(query, &params[..]).await
+        let result = self.client.execute(query, &refs[..]).await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(result)
     }
 
     async fn query(&self, query: &str, params: Vec<serde_json::Value>) -> Result<Vec<HashMap<String, serde_json::Value>>, DatabaseError> {
-        let params = convert_params(params);
+        let boxed = convert_params(params);
+        let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = boxed.iter().map(|b| &**b).collect();
 
-        let rows = self.client.query(query, &params[..]).await
+        let rows = self.client.query(query, &refs[..]).await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         let results = rows.into_iter()
@@ -55,9 +57,10 @@ impl DatabaseConnection for PostgresConnection {
     }
 
     async fn query_one(&self, query: &str, params: Vec<serde_json::Value>) -> Result<Option<HashMap<String, serde_json::Value>>, DatabaseError> {
-        let params = convert_params(params);
+        let boxed = convert_params(params);
+        let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = boxed.iter().map(|b| &**b).collect();
 
-        let row = self.client.query_opt(query, &params[..]).await
+        let row = self.client.query_opt(query, &refs[..]).await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         match row {
@@ -101,6 +104,13 @@ fn row_to_hashmap(row: &Row) -> Result<HashMap<String, serde_json::Value>, Datab
                     Ok(None) => serde_json::Value::Null,
                     Err(_) => match row.try_get::<_, Option<f64>>(i) {
                         Ok(Some(f)) => serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap_or(0.into())),
+                        Ok(Some(f)) => {
+                            if let Some(num) = serde_json::Number::from_f64(f) {
+                                serde_json::Value::Number(num)
+                            } else {
+                                serde_json::Value::Null
+                            }
+                        }
                         Ok(None) => serde_json::Value::Null,
                         Err(_) => match row.try_get::<_, Option<bool>>(i) {
                             Ok(Some(b)) => serde_json::Value::Bool(b),
@@ -133,19 +143,23 @@ fn row_to_hashmap(row: &Row) -> Result<HashMap<String, serde_json::Value>, Datab
 }
 
 /// Convert serde_json values to tokio_postgres parameters
-fn convert_params(params: Vec<serde_json::Value>) -> Vec<&(dyn tokio_postgres::types::ToSql + Sync)> {
+fn convert_params(params: Vec<serde_json::Value>) -> Vec<Box<dyn tokio_postgres::types::ToSql + Sync>> {
     // This is a simplified conversion - in practice, you'd need proper type handling
-    // For now, we'll convert to strings and let PostgreSQL handle the conversion
-    params.into_iter().map(|value| {
+    // We box the owned values so we can return owned trait objects with independent lifetimes
+    let mut out: Vec<Box<dyn tokio_postgres::types::ToSql + Sync>> = Vec::with_capacity(params.len());
+
+    for value in params {
         match value {
-            serde_json::Value::Null => &"NULL" as &dyn tokio_postgres::types::ToSql,
-            serde_json::Value::Bool(b) => if b { &"true" } else { &"false" } as &dyn tokio_postgres::types::ToSql,
-            serde_json::Value::Number(n) => &n.to_string() as &dyn tokio_postgres::types::ToSql,
-            serde_json::Value::String(s) => &s as &dyn tokio_postgres::types::ToSql,
-            serde_json::Value::Array(arr) => &serde_json::to_string(&arr).unwrap_or_default() as &dyn tokio_postgres::types::ToSql,
-            serde_json::Value::Object(obj) => &serde_json::to_string(&obj).unwrap_or_default() as &dyn tokio_postgres::types::ToSql,
+            serde_json::Value::Null => out.push(Box::new("NULL".to_string())),
+            serde_json::Value::Bool(b) => out.push(Box::new(b.to_string())),
+            serde_json::Value::Number(n) => out.push(Box::new(n.to_string())),
+            serde_json::Value::String(s) => out.push(Box::new(s)),
+            serde_json::Value::Array(arr) => out.push(Box::new(serde_json::to_string(&arr).unwrap_or_default())),
+            serde_json::Value::Object(obj) => out.push(Box::new(serde_json::to_string(&obj).unwrap_or_default())),
         }
-    }).collect()
+    }
+
+    out
 }
 
 #[cfg(test)]

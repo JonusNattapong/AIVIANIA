@@ -2,14 +2,14 @@
 //!
 //! Provides asynchronous job processing with Redis-backed queues and worker management.
 
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
+use futures::future::join_all;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
-use futures::future::join_all;
 
 /// Job priority levels
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -142,19 +142,31 @@ pub trait JobQueue: Send + Sync {
     async fn enqueue(&self, job: Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     /// Dequeue a job from a specific queue
-    async fn dequeue(&self, queue_name: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn dequeue(
+        &self,
+        queue_name: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Get job by ID
-    async fn get_job(&self, job_id: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_job(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Update job status
     async fn update_job(&self, job: &Job) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     /// Get pending jobs count for a queue
-    async fn pending_count(&self, queue_name: &str) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
+    async fn pending_count(
+        &self,
+        queue_name: &str,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Clean up old completed/failed jobs
-    async fn cleanup(&self, older_than: Duration) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    async fn cleanup(
+        &self,
+        older_than: Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// In-memory job queue for development/testing
@@ -182,12 +194,18 @@ impl JobQueue for MemoryJobQueue {
         let mut queues = self.queues.write().await;
 
         jobs.insert(job_id.clone(), job);
-        queues.entry(queue_name).or_insert_with(Vec::new).push(job_id);
+        queues
+            .entry(queue_name)
+            .or_insert_with(Vec::new)
+            .push(job_id);
 
         Ok(())
     }
 
-    async fn dequeue(&self, queue_name: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn dequeue(
+        &self,
+        queue_name: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
         let mut queues = self.queues.write().await;
         let mut jobs = self.jobs.write().await;
 
@@ -207,7 +225,10 @@ impl JobQueue for MemoryJobQueue {
         Ok(None)
     }
 
-    async fn get_job(&self, job_id: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_job(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
         let jobs = self.jobs.read().await;
         Ok(jobs.get(job_id).cloned())
     }
@@ -218,12 +239,16 @@ impl JobQueue for MemoryJobQueue {
         Ok(())
     }
 
-    async fn pending_count(&self, queue_name: &str) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    async fn pending_count(
+        &self,
+        queue_name: &str,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let queues = self.queues.read().await;
         let jobs = self.jobs.read().await;
 
         if let Some(queue) = queues.get(queue_name) {
-            let count = queue.iter()
+            let count = queue
+                .iter()
                 .filter(|job_id| {
                     jobs.get(*job_id)
                         .map(|job| job.status == JobStatus::Pending)
@@ -236,7 +261,10 @@ impl JobQueue for MemoryJobQueue {
         }
     }
 
-    async fn cleanup(&self, _older_than: Duration) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn cleanup(
+        &self,
+        _older_than: Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut jobs = self.jobs.write().await;
         let mut queues = self.queues.write().await;
 
@@ -244,7 +272,8 @@ impl JobQueue for MemoryJobQueue {
         let cutoff = Utc::now() - _older_than;
         jobs.retain(|_, job| {
             if (job.status == JobStatus::Completed || job.status == JobStatus::Failed)
-                && job.completed_at.map(|t| t < cutoff).unwrap_or(false) {
+                && job.completed_at.map(|t| t < cutoff).unwrap_or(false)
+            {
                 // Remove from queues
                 if let Some(queue) = queues.get_mut(&job.queue_name) {
                     queue.retain(|id| id != &job.id);
@@ -299,7 +328,10 @@ impl JobQueue for RedisJobQueue {
         Ok(())
     }
 
-    async fn dequeue(&self, queue_name: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn dequeue(
+        &self,
+        queue_name: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let queue_key = Self::queue_key(queue_name);
 
@@ -313,7 +345,10 @@ impl JobQueue for RedisJobQueue {
 
         if let Some(job_id) = job_ids.first() {
             let job_key = Self::job_key(job_id);
-            let job_data: Option<String> = redis::cmd("GET").arg(&job_key).query_async(&mut conn).await?;
+            let job_data: Option<String> = redis::cmd("GET")
+                .arg(&job_key)
+                .query_async(&mut conn)
+                .await?;
 
             if let Some(data) = job_data {
                 let mut job: Job = serde_json::from_str(&data)?;
@@ -326,7 +361,11 @@ impl JobQueue for RedisJobQueue {
 
                     job.mark_started();
                     let updated_data = serde_json::to_string(&job)?;
-                    redis::cmd("SET").arg(&job_key).arg(&updated_data).query_async(&mut conn).await?;
+                    redis::cmd("SET")
+                        .arg(&job_key)
+                        .arg(&updated_data)
+                        .query_async(&mut conn)
+                        .await?;
 
                     return Ok(Some(job));
                 }
@@ -336,10 +375,16 @@ impl JobQueue for RedisJobQueue {
         Ok(None)
     }
 
-    async fn get_job(&self, job_id: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_job(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let job_key = Self::job_key(job_id);
-        let job_data: Option<String> = redis::cmd("GET").arg(&job_key).query_async(&mut conn).await?;
+        let job_data: Option<String> = redis::cmd("GET")
+            .arg(&job_key)
+            .query_async(&mut conn)
+            .await?;
 
         match job_data {
             Some(data) => {
@@ -354,31 +399,51 @@ impl JobQueue for RedisJobQueue {
         let mut conn = self.client.get_async_connection().await?;
         let job_key = Self::job_key(&job.id);
         let job_data = serde_json::to_string(job)?;
-        redis::cmd("SET").arg(&job_key).arg(&job_data).query_async(&mut conn).await?;
+        redis::cmd("SET")
+            .arg(&job_key)
+            .arg(&job_data)
+            .query_async(&mut conn)
+            .await?;
         Ok(())
     }
 
-    async fn pending_count(&self, queue_name: &str) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    async fn pending_count(
+        &self,
+        queue_name: &str,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let queue_key = Self::queue_key(queue_name);
-        let count: u64 = redis::cmd("ZCARD").arg(&queue_key).query_async(&mut conn).await?;
+        let count: u64 = redis::cmd("ZCARD")
+            .arg(&queue_key)
+            .query_async(&mut conn)
+            .await?;
         Ok(count)
     }
 
-    async fn cleanup(&self, older_than: Duration) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn cleanup(
+        &self,
+        older_than: Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.client.get_async_connection().await?;
         let cutoff = Utc::now() - older_than;
 
         // Find all job keys
-        let job_keys: Vec<String> = redis::cmd("KEYS").arg("job:*").query_async(&mut conn).await?;
+        let job_keys: Vec<String> = redis::cmd("KEYS")
+            .arg("job:*")
+            .query_async(&mut conn)
+            .await?;
 
         for job_key in job_keys {
-            let job_data: Option<String> = redis::cmd("GET").arg(&job_key).query_async(&mut conn).await?;
+            let job_data: Option<String> = redis::cmd("GET")
+                .arg(&job_key)
+                .query_async(&mut conn)
+                .await?;
 
             if let Some(data) = job_data {
                 if let Ok(job) = serde_json::from_str::<Job>(&data) {
                     if (job.status == JobStatus::Completed || job.status == JobStatus::Failed)
-                        && job.completed_at.map(|t| t < cutoff).unwrap_or(false) {
+                        && job.completed_at.map(|t| t < cutoff).unwrap_or(false)
+                    {
                         // Remove job and from any queues
                         redis::pipe()
                             .del(&job_key)
@@ -419,12 +484,16 @@ impl JobWorker {
 
     /// Register a job handler
     pub fn register_handler<H: JobHandler + 'static>(mut self, job_type: &str, handler: H) -> Self {
-        self.handlers.insert(job_type.to_string(), Arc::new(handler));
+        self.handlers
+            .insert(job_type.to_string(), Arc::new(handler));
         self
     }
 
     /// Start the worker
-    pub async fn start(&self, queue_names: &[&str]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start(
+        &self,
+        queue_names: &[&str],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Create a channel for each worker
         let mut senders = Vec::new();
         let mut receivers = Vec::new();
@@ -469,7 +538,7 @@ impl JobWorker {
                     // Send to first available worker
                     for sender in &senders {
                         match sender.try_send(job.clone()) {
-                            Ok(_) => break, // Successfully sent
+                            Ok(_) => break,                                        // Successfully sent
                             Err(mpsc::error::TrySendError::Full(_)) => continue, // Try next worker
                             Err(mpsc::error::TrySendError::Closed(_)) => continue, // Worker closed
                         }
@@ -505,7 +574,11 @@ impl JobManager {
     }
 
     /// Enqueue a job
-    pub async fn enqueue<T: Serialize>(&self, job_type: &str, payload: T) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn enqueue<T: Serialize>(
+        &self,
+        job_type: &str,
+        payload: T,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let job = Job::new(job_type, payload);
         let job_id = job.id.clone();
         self.queue.enqueue(job).await?;
@@ -513,24 +586,36 @@ impl JobManager {
     }
 
     /// Enqueue a job with custom options
-    pub async fn enqueue_job(&self, job: Job) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn enqueue_job(
+        &self,
+        job: Job,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let job_id = job.id.clone();
         self.queue.enqueue(job).await?;
         Ok(job_id)
     }
 
     /// Get job status
-    pub async fn get_job(&self, job_id: &str) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_job(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<Job>, Box<dyn std::error::Error + Send + Sync>> {
         self.queue.get_job(job_id).await
     }
 
     /// Get pending jobs count
-    pub async fn pending_count(&self, queue_name: &str) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn pending_count(
+        &self,
+        queue_name: &str,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         self.queue.pending_count(queue_name).await
     }
 
     /// Start all workers
-    pub async fn start_workers(&self, queue_names: &[&str]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_workers(
+        &self,
+        queue_names: &[&str],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut handles = Vec::new();
         let queue_names: Vec<String> = queue_names.iter().map(|s| s.to_string()).collect();
 
@@ -538,7 +623,9 @@ impl JobManager {
             let queue_names = queue_names.clone();
             let worker = worker.clone();
             let handle = tokio::spawn(async move {
-                worker.start(&queue_names.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await
+                worker
+                    .start(&queue_names.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                    .await
             });
             handles.push(handle);
         }
@@ -549,7 +636,10 @@ impl JobManager {
     }
 
     /// Clean up old jobs
-    pub async fn cleanup(&self, older_than: Duration) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn cleanup(
+        &self,
+        older_than: Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.queue.cleanup(older_than).await
     }
 }
@@ -576,8 +666,7 @@ pub mod helpers {
             "body": body
         });
 
-        Job::new("send_email", payload)
-            .with_priority(JobPriority::Normal)
+        Job::new("send_email", payload).with_priority(JobPriority::Normal)
     }
 
     /// Create a data processing job
@@ -587,8 +676,7 @@ pub mod helpers {
             "operation": operation
         });
 
-        Job::new("process_data", payload)
-            .with_priority(JobPriority::High)
+        Job::new("process_data", payload).with_priority(JobPriority::High)
     }
 
     /// Create a cleanup job

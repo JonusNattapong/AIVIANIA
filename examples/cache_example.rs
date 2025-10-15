@@ -44,17 +44,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check cache statistics
     let stats = cache_manager.stats().await?;
-    println!("📊 Cache stats - Hits: {}, Misses: {}, Total keys: {}",
-             stats.hits, stats.misses, stats.total_keys);
+    println!(
+        "📊 Cache stats - Hits: {}, Misses: {}, Total keys: {}",
+        stats.hits, stats.misses, stats.total_keys
+    );
 
     // Example 2: Redis backend (if Redis is available)
     #[cfg(feature = "redis")]
     {
         println!("\n🔴 Example 2: Redis Cache Backend");
-        match create_backend(CacheBackendType::Redis("redis://127.0.0.1:6379".to_string())).downcast::<aiviania::cache::backends::RedisCache>() {
+        match create_backend(CacheBackendType::Redis(
+            "redis://127.0.0.1:6379".to_string(),
+        ))
+        .downcast::<aiviania::cache::backends::RedisCache>()
+        {
             Ok(redis_backend) => {
                 let redis_cache = CacheManager::new(redis_backend);
-                redis_cache.set("redis_key", &"Hello Redis!", Some(600)).await?;
+                redis_cache
+                    .set("redis_key", &"Hello Redis!", Some(600))
+                    .await?;
                 println!("✅ Cached data in Redis");
 
                 if let Some(value) = redis_cache.get::<String>("redis_key").await? {

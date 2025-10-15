@@ -1,8 +1,8 @@
 //! Input Validation and Sanitization
 
-use super::{SecurityError, SecurityEvent, SecurityResult, SecurityMiddleware};
-use hyper::{Request, Body};
+use super::{SecurityError, SecurityEvent, SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
+use hyper::{Body, Request};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,7 +53,10 @@ impl InputValidator {
 
     /// Add multiple rules for a field
     pub fn add_rules(mut self, field: String, rules: Vec<ValidationRule>) -> Self {
-        self.rules.entry(field).or_insert_with(Vec::new).extend(rules);
+        self.rules
+            .entry(field)
+            .or_insert_with(Vec::new)
+            .extend(rules);
         self
     }
 
@@ -83,7 +86,10 @@ impl InputValidator {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(SecurityError::Validation(format!("Validation failed: {:?}", errors)))
+            Err(SecurityError::Validation(format!(
+                "Validation failed: {:?}",
+                errors
+            )))
         }
     }
 
@@ -97,7 +103,10 @@ impl InputValidator {
         match rule {
             ValidationRule::Required => {
                 if value.is_none() || value.unwrap().is_null() {
-                    return Err(SecurityError::Validation(format!("Field '{}' is required", field)));
+                    return Err(SecurityError::Validation(format!(
+                        "Field '{}' is required",
+                        field
+                    )));
                 }
             }
             ValidationRule::MinLength(min) => {
@@ -351,7 +360,9 @@ impl SecurityMiddleware for SqlInjectionPrevention {
                     };
                     event_logger.log_event(event).await;
 
-                    return Err(SecurityError::PolicyViolation("Potential SQL injection detected".to_string()));
+                    return Err(SecurityError::PolicyViolation(
+                        "Potential SQL injection detected".to_string(),
+                    ));
                 }
             }
         }
@@ -403,7 +414,9 @@ impl SecurityMiddleware for XssPrevention {
                     };
                     event_logger.log_event(event).await;
 
-                    return Err(SecurityError::PolicyViolation("Potential XSS attack detected".to_string()));
+                    return Err(SecurityError::PolicyViolation(
+                        "Potential XSS attack detected".to_string(),
+                    ));
                 }
             }
         }

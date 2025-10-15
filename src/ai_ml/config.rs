@@ -97,7 +97,7 @@ impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             default_step_timeout_ms: 30000, // 30 seconds
-            max_execution_time_secs: 300,    // 5 minutes
+            max_execution_time_secs: 300,   // 5 minutes
             enable_caching: false,
             cache_ttl_secs: 3600, // 1 hour
         }
@@ -250,20 +250,30 @@ impl ConfigValidator {
     pub fn validate_config(config: &MlConfig) -> MlResult<()> {
         // Validate inference config
         if config.inference_config.max_concurrent_requests == 0 {
-            return Err(MlError::Config("max_concurrent_requests must be > 0".to_string()));
+            return Err(MlError::Config(
+                "max_concurrent_requests must be > 0".to_string(),
+            ));
         }
 
         if config.inference_config.request_timeout_secs == 0 {
-            return Err(MlError::Config("request_timeout_secs must be > 0".to_string()));
+            return Err(MlError::Config(
+                "request_timeout_secs must be > 0".to_string(),
+            ));
         }
 
-        if config.inference_config.scale_threshold < 0.0 || config.inference_config.scale_threshold > 1.0 {
-            return Err(MlError::Config("scale_threshold must be between 0.0 and 1.0".to_string()));
+        if config.inference_config.scale_threshold < 0.0
+            || config.inference_config.scale_threshold > 1.0
+        {
+            return Err(MlError::Config(
+                "scale_threshold must be between 0.0 and 1.0".to_string(),
+            ));
         }
 
         // Validate pipeline config
         if config.pipeline_config.max_execution_time_secs == 0 {
-            return Err(MlError::Config("max_execution_time_secs must be > 0".to_string()));
+            return Err(MlError::Config(
+                "max_execution_time_secs must be > 0".to_string(),
+            ));
         }
 
         // Validate models
@@ -282,7 +292,9 @@ impl ConfigValidator {
                 return Err(MlError::Config("Pipeline name cannot be empty".to_string()));
             }
             if pipeline.steps.is_empty() {
-                return Err(MlError::Config("Pipeline must have at least one step".to_string()));
+                return Err(MlError::Config(
+                    "Pipeline must have at least one step".to_string(),
+                ));
             }
         }
 

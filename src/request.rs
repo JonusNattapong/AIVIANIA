@@ -2,7 +2,7 @@
 //!
 //! This module provides a Request type alias and helpers for hyper's Request.
 
-use hyper::{Request, Body};
+use hyper::{Body, Request};
 
 // Type alias for convenience
 pub type AivianiaRequest = Request<Body>;

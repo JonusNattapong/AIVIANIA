@@ -86,7 +86,8 @@ impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserReposito
 
         match results {
             QueryResult::Query(rows) => {
-                let users = rows.into_iter()
+                let users = rows
+                    .into_iter()
                     .map(User::from_row)
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(users)
@@ -110,9 +111,21 @@ impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserReposito
             serde_json::Value::String(entity.email.clone()),
             serde_json::Value::String(entity.password_hash.clone()),
             serde_json::Value::String(entity.role.clone()),
-            entity.first_name.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
-            entity.last_name.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
-            entity.avatar_url.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
+            entity
+                .first_name
+                .as_ref()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .unwrap_or(serde_json::Value::Null),
+            entity
+                .last_name
+                .as_ref()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .unwrap_or(serde_json::Value::Null),
+            entity
+                .avatar_url
+                .as_ref()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .unwrap_or(serde_json::Value::Null),
             serde_json::Value::Bool(entity.is_active),
             serde_json::Value::String(now.to_rfc3339()),
             serde_json::Value::String(now.to_rfc3339()),
@@ -121,10 +134,16 @@ impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserReposito
         match self.db.execute(query, params).await? {
             QueryResult::Execute(rows_affected) => {
                 if rows_affected == 0 {
-                    return Err(DatabaseError::QueryError("Failed to create user".to_string()));
+                    return Err(DatabaseError::QueryError(
+                        "Failed to create user".to_string(),
+                    ));
                 }
             }
-            _ => return Err(DatabaseError::QueryError("Failed to create user".to_string())),
+            _ => {
+                return Err(DatabaseError::QueryError(
+                    "Failed to create user".to_string(),
+                ))
+            }
         }
 
         // Get the created user (assuming auto-increment ID)
@@ -136,8 +155,12 @@ impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserReposito
                 let user = User::from_row(row)?;
                 Ok(user.id.unwrap_or(0))
             }
-            QueryResult::QueryOne(None) => Err(DatabaseError::QueryError("Failed to retrieve created user".to_string())),
-            _ => Err(DatabaseError::QueryError("Failed to retrieve created user".to_string())),
+            QueryResult::QueryOne(None) => Err(DatabaseError::QueryError(
+                "Failed to retrieve created user".to_string(),
+            )),
+            _ => Err(DatabaseError::QueryError(
+                "Failed to retrieve created user".to_string(),
+            )),
         }
     }
 
@@ -157,9 +180,21 @@ impl<T: DatabaseConnection + Send + Sync> Repository<User, i64> for UserReposito
                 serde_json::Value::String(entity.email.clone()),
                 serde_json::Value::String(entity.password_hash.clone()),
                 serde_json::Value::String(entity.role.clone()),
-                entity.first_name.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
-                entity.last_name.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
-                entity.avatar_url.as_ref().map(|s| serde_json::Value::String(s.clone())).unwrap_or(serde_json::Value::Null),
+                entity
+                    .first_name
+                    .as_ref()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .unwrap_or(serde_json::Value::Null),
+                entity
+                    .last_name
+                    .as_ref()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .unwrap_or(serde_json::Value::Null),
+                entity
+                    .avatar_url
+                    .as_ref()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .unwrap_or(serde_json::Value::Null),
                 serde_json::Value::Bool(entity.is_active),
                 serde_json::Value::String(now.to_rfc3339()),
                 serde_json::Value::Number(id.into()),
@@ -251,10 +286,16 @@ impl User {
 }
 
 /// Helper functions for extracting values from database rows
-fn extract_string(row: &HashMap<String, serde_json::Value>, key: &str) -> Result<String, DatabaseError> {
+fn extract_string(
+    row: &HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<String, DatabaseError> {
     match row.get(key) {
         Some(serde_json::Value::String(s)) => Ok(s.clone()),
-        _ => Err(DatabaseError::QueryError(format!("Invalid or missing field: {}", key))),
+        _ => Err(DatabaseError::QueryError(format!(
+            "Invalid or missing field: {}",
+            key
+        ))),
     }
 }
 
@@ -265,36 +306,56 @@ fn extract_optional_string(row: &HashMap<String, serde_json::Value>, key: &str) 
     }
 }
 
-fn extract_i64(row: &HashMap<String, serde_json::Value>, key: &str) -> Result<Option<i64>, DatabaseError> {
+fn extract_i64(
+    row: &HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<i64>, DatabaseError> {
     match row.get(key) {
         Some(serde_json::Value::Number(n)) => Ok(n.as_i64()),
         Some(serde_json::Value::Null) => Ok(None),
-        _ => Err(DatabaseError::QueryError(format!("Invalid field type for {}: expected number", key))),
+        _ => Err(DatabaseError::QueryError(format!(
+            "Invalid field type for {}: expected number",
+            key
+        ))),
     }
 }
 
-fn extract_bool(row: &HashMap<String, serde_json::Value>, key: &str) -> Result<bool, DatabaseError> {
+fn extract_bool(
+    row: &HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<bool, DatabaseError> {
     match row.get(key) {
         Some(serde_json::Value::Bool(b)) => Ok(*b),
         Some(serde_json::Value::Number(n)) => Ok(n.as_i64().unwrap_or(0) != 0), // SQLite compatibility
-        _ => Err(DatabaseError::QueryError(format!("Invalid field type for {}: expected boolean", key))),
+        _ => Err(DatabaseError::QueryError(format!(
+            "Invalid field type for {}: expected boolean",
+            key
+        ))),
     }
 }
 
-fn extract_datetime(row: &HashMap<String, serde_json::Value>, key: &str) -> Result<chrono::DateTime<chrono::Utc>, DatabaseError> {
+fn extract_datetime(
+    row: &HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<chrono::DateTime<chrono::Utc>, DatabaseError> {
     match row.get(key) {
-        Some(serde_json::Value::String(s)) => {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .map_err(|e| DatabaseError::QueryError(format!("Invalid datetime format for {}: {}", key, e)))
-        }
-        _ => Err(DatabaseError::QueryError(format!("Invalid field type for {}: expected string", key))),
+        Some(serde_json::Value::String(s)) => chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| {
+                DatabaseError::QueryError(format!("Invalid datetime format for {}: {}", key, e))
+            }),
+        _ => Err(DatabaseError::QueryError(format!(
+            "Invalid field type for {}: expected string",
+            key
+        ))),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "sqlite")]
     use super::*;
+    #[cfg(feature = "sqlite")]
     use crate::database::{DatabaseConfig, DatabaseManager, DatabaseType};
 
     #[tokio::test]
@@ -342,13 +403,20 @@ mod tests {
         assert!(created_user.id.is_some());
 
         // Find user
-        let found_user = repo.find_by_id(created_user.id.unwrap()).await.unwrap().unwrap();
+        let found_user = repo
+            .find_by_id(created_user.id.unwrap())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(found_user.username, "testuser");
 
         // Update user
         let mut updated_user = found_user.clone();
         updated_user.first_name = Some("Updated".to_string());
-        let updated = repo.update(updated_user.id.unwrap(), &updated_user).await.unwrap();
+        let updated = repo
+            .update(updated_user.id.unwrap(), &updated_user)
+            .await
+            .unwrap();
         assert_eq!(updated.first_name, Some("Updated".to_string()));
 
         // Find all users

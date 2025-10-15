@@ -1,6 +1,6 @@
 //! ML Pipeline orchestration
 
-use super::{MlError, MlResult, types::*};
+use super::{types::*, MlError, MlResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -68,7 +68,8 @@ impl PipelineOrchestrator {
         input: InferenceInput,
     ) -> MlResult<PipelineResult> {
         let pipelines = self.pipelines.read().await;
-        let config = pipelines.get(pipeline_name)
+        let config = pipelines
+            .get(pipeline_name)
             .ok_or_else(|| MlError::NotFound(format!("Pipeline '{}' not found", pipeline_name)))?;
 
         let start_time = std::time::Instant::now();
@@ -81,12 +82,18 @@ impl PipelineOrchestrator {
 
             // Get model for this step
             let models = self.models.read().await;
-            let model = models.get(&format!("{}:{}", step.model_name, step.model_version))
-                .ok_or_else(|| MlError::NotFound(format!("Model '{}' version '{}' not found",
-                    step.model_name, step.model_version)))?;
+            let model = models
+                .get(&format!("{}:{}", step.model_name, step.model_version))
+                .ok_or_else(|| {
+                    MlError::NotFound(format!(
+                        "Model '{}' version '{}' not found",
+                        step.model_name, step.model_version
+                    ))
+                })?;
 
             // Prepare input for this step
-            let step_input = self.prepare_step_input(&step.input_mapping, &current_data, &current_metadata)?;
+            let step_input =
+                self.prepare_step_input(&step.input_mapping, &current_data, &current_metadata)?;
 
             let inference_input = InferenceInput {
                 data: step_input,
@@ -94,11 +101,13 @@ impl PipelineOrchestrator {
             };
 
             // Execute step with timeout
-            let timeout_duration = step.timeout_ms
+            let timeout_duration = step
+                .timeout_ms
                 .map(|ms| std::time::Duration::from_millis(ms))
                 .unwrap_or(std::time::Duration::from_secs(30));
 
-            let step_result = match timeout(timeout_duration, model.predict(inference_input)).await {
+            let step_result = match timeout(timeout_duration, model.predict(inference_input)).await
+            {
                 Ok(Ok(output)) => {
                     // Update current data and metadata for next step
                     current_data = output.result.clone();
@@ -194,14 +203,20 @@ impl PipelineOrchestrator {
             if let Some(value) = data.get(field) {
                 Ok(value.clone())
             } else {
-                Err(MlError::Pipeline(format!("Field '{}' not found in data", field)))
+                Err(MlError::Pipeline(format!(
+                    "Field '{}' not found in data",
+                    field
+                )))
             }
         } else if expr.starts_with("metadata.") {
             let key = &expr[9..];
             if let Some(value) = metadata.get(key) {
                 Ok(serde_json::Value::String(value.clone()))
             } else {
-                Err(MlError::Pipeline(format!("Key '{}' not found in metadata", key)))
+                Err(MlError::Pipeline(format!(
+                    "Key '{}' not found in metadata",
+                    key
+                )))
             }
         } else {
             // Direct value
@@ -212,7 +227,8 @@ impl PipelineOrchestrator {
     /// Get pipeline configuration
     pub async fn get_pipeline(&self, name: &str) -> MlResult<PipelineConfig> {
         let pipelines = self.pipelines.read().await;
-        pipelines.get(name)
+        pipelines
+            .get(name)
             .cloned()
             .ok_or_else(|| MlError::NotFound(format!("Pipeline '{}' not found", name)))
     }
@@ -226,14 +242,19 @@ impl PipelineOrchestrator {
     /// Validate pipeline configuration
     pub async fn validate_pipeline(&self, config: &PipelineConfig) -> MlResult<()> {
         if config.steps.is_empty() {
-            return Err(MlError::Validation("Pipeline must have at least one step".to_string()));
+            return Err(MlError::Validation(
+                "Pipeline must have at least one step".to_string(),
+            ));
         }
 
         let models = self.models.read().await;
         for step in &config.steps {
             let model_key = format!("{}:{}", step.model_name, step.model_version);
             if !models.contains_key(&model_key) {
-                return Err(MlError::Validation(format!("Model '{}' version '{}' not registered", step.model_name, step.model_version)));
+                return Err(MlError::Validation(format!(
+                    "Model '{}' version '{}' not registered",
+                    step.model_name, step.model_version
+                )));
             }
         }
 
@@ -307,7 +328,8 @@ impl PipelineContext {
 
     /// Add a log entry
     pub fn log(&mut self, message: String) {
-        self.logs.push(format!("[{}] {}", chrono::Utc::now().to_rfc3339(), message));
+        self.logs
+            .push(format!("[{}] {}", chrono::Utc::now().to_rfc3339(), message));
     }
 
     /// Set a variable

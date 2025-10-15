@@ -8,16 +8,16 @@
 //! - Authentication middleware
 
 pub mod jwt;
-pub mod session;
-pub mod rbac;
 pub mod middleware;
 pub mod models;
 pub mod password;
+pub mod rbac;
+pub mod session;
 
 // Re-export commonly used types
-pub use jwt::{JwtService, Claims};
-pub use session::SessionManager;
-pub use rbac::RBACService;
+pub use jwt::{Claims, JwtService};
 pub use middleware::AuthMiddleware;
-pub use models::{User, Role, Permission, UserRole};
+pub use models::{Permission, Role, User, UserRole};
 pub use password::PasswordService;
+pub use rbac::RBACService;
+pub use session::SessionManager;

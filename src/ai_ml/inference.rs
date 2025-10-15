@@ -1,6 +1,6 @@
 //! ML Inference endpoints and batch processing
 
-use super::{MlError, MlResult, types::*};
+use super::{types::*, MlError, MlResult};
 use async_trait::async_trait;
 use futures::stream::{Stream, StreamExt};
 use std::collections::HashMap;
@@ -41,14 +41,22 @@ impl InferenceEngine {
     /// Get a model by name
     pub async fn get_model(&self, name: &str) -> MlResult<Box<dyn MlModel>> {
         let models = self.models.read().await;
-        models.get(name)
+        models
+            .get(name)
             .cloned()
             .ok_or_else(|| MlError::NotFound(format!("Model '{}' not found", name)))
     }
 
     /// Perform single inference
-    pub async fn predict(&self, model_name: &str, input: InferenceInput) -> MlResult<InferenceOutput> {
-        let _permit = self.rate_limiter.acquire().await
+    pub async fn predict(
+        &self,
+        model_name: &str,
+        input: InferenceInput,
+    ) -> MlResult<InferenceOutput> {
+        let _permit = self
+            .rate_limiter
+            .acquire()
+            .await
             .map_err(|_| MlError::RateLimit)?;
 
         let model = self.get_model(model_name).await?;
@@ -77,7 +85,9 @@ impl InferenceEngine {
             let timeout_duration = self.timeout_duration;
 
             let handle = tokio::spawn(async move {
-                let _permit = rate_limiter.acquire().await
+                let _permit = rate_limiter
+                    .acquire()
+                    .await
                     .map_err(|_| MlError::RateLimit)?;
 
                 timeout(timeout_duration, model.predict(input))
@@ -118,7 +128,9 @@ impl InferenceEngine {
             let timeout_duration = timeout_duration;
 
             async move {
-                let _permit = rate_limiter.acquire().await
+                let _permit = rate_limiter
+                    .acquire()
+                    .await
                     .map_err(|_| MlError::RateLimit)?;
 
                 timeout(timeout_duration, model.predict(input))
@@ -165,7 +177,10 @@ impl InferenceService {
         input: serde_json::Value,
         metadata: Option<HashMap<String, String>>,
     ) -> MlResult<serde_json::Value> {
-        let inference_input = InferenceInput { data: input, metadata };
+        let inference_input = InferenceInput {
+            data: input,
+            metadata,
+        };
         let output = self.engine.predict(model_name, inference_input).await?;
 
         Ok(serde_json::json!({
@@ -183,19 +198,25 @@ impl InferenceService {
         inputs: Vec<serde_json::Value>,
         metadata: Option<Vec<HashMap<String, String>>>,
     ) -> MlResult<serde_json::Value> {
-        let inference_inputs: Vec<InferenceInput> = inputs.into_iter()
+        let inference_inputs: Vec<InferenceInput> = inputs
+            .into_iter()
             .enumerate()
             .map(|(i, data)| {
-                let meta = metadata.as_ref()
-                    .and_then(|m| m.get(i))
-                    .cloned();
-                InferenceInput { data, metadata: meta }
+                let meta = metadata.as_ref().and_then(|m| m.get(i)).cloned();
+                InferenceInput {
+                    data,
+                    metadata: meta,
+                }
             })
             .collect();
 
-        let results = self.engine.predict_batch(model_name, inference_inputs).await?;
+        let results = self
+            .engine
+            .predict_batch(model_name, inference_inputs)
+            .await?;
 
-        let responses: Vec<serde_json::Value> = results.into_iter()
+        let responses: Vec<serde_json::Value> = results
+            .into_iter()
             .map(|result| match result {
                 Ok(output) => serde_json::json!({
                     "success": true,

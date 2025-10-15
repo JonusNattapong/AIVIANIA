@@ -3,9 +3,7 @@
 //! This example shows how to use the job queue system with different
 //! storage backends and custom job handlers.
 
-use aiviania::{
-    jobs::{JobManager, JobWorker, Job, JobPriority, MemoryJobQueue, helpers::*},
-};
+use aiviania::jobs::{helpers::*, Job, JobManager, JobPriority, JobWorker, MemoryJobQueue};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -60,16 +58,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manager = JobManager::new(queue.clone());
 
     // Create workers with handlers
-    let email_worker = JobWorker::new(queue.clone())
-        .register_handler("send_email", EmailHandler);
+    let email_worker = JobWorker::new(queue.clone()).register_handler("send_email", EmailHandler);
 
-    let data_worker = JobWorker::new(queue.clone())
-        .register_handler("process_data", DataProcessor);
+    let data_worker = JobWorker::new(queue.clone()).register_handler("process_data", DataProcessor);
 
     // Add workers to manager
-    let manager = manager
-        .add_worker(email_worker)
-        .add_worker(data_worker);
+    let manager = manager.add_worker(email_worker).add_worker(data_worker);
 
     // Start workers in background
     let manager_clone = manager.clone();
@@ -85,18 +79,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n📋 Enqueueing jobs...");
 
     // Enqueue some jobs
-    let email_job_id = manager.enqueue("send_email", serde_json::json!({
-        "to": "user@example.com",
-        "subject": "Welcome to AIVIANIA!",
-        "body": "Thank you for using our framework."
-    })).await?;
+    let email_job_id = manager
+        .enqueue(
+            "send_email",
+            serde_json::json!({
+                "to": "user@example.com",
+                "subject": "Welcome to AIVIANIA!",
+                "body": "Thank you for using our framework."
+            }),
+        )
+        .await?;
 
     println!("📧 Email job enqueued: {}", email_job_id);
 
-    let data_job_id = manager.enqueue("process_data", serde_json::json!({
-        "data_id": "user_123",
-        "operation": "validate"
-    })).await?;
+    let data_job_id = manager
+        .enqueue(
+            "process_data",
+            serde_json::json!({
+                "data_id": "user_123",
+                "operation": "validate"
+            }),
+        )
+        .await?;
 
     println!("🔄 Data processing job enqueued: {}", data_job_id);
 
@@ -104,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let helper_email_job = create_email_job(
         "admin@example.com",
         "System Alert",
-        "Background job system is working!"
+        "Background job system is working!",
     );
     let helper_email_id = manager.enqueue_job(helper_email_job).await?;
     println!("📧 Helper email job enqueued: {}", helper_email_id);
