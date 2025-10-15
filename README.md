@@ -1,15 +1,11 @@
-# AIVIANIA - Async-First Rust Web Framework
+# AIVIANIA — Async-First Rust Web Framework
 
-<p align="center">
-  <img src="asset/logo.png" alt="AIVIANIA Logo" width="256" height="256">
-</p>
+![CI](https://github.com/JonusNattapong/AIVIANIA/workflows/CI/badge.svg)
+[![Crates.io](https://img.shields.io/crates/v/aiviania.svg)](https://crates.io/crates/aiviania)
+[![Docs.rs](https://docs.rs/aiviania/badge.svg)](https://docs.rs/aiviania)
+[![License](https://img.shields.io/github/license/JonusNattapong/AIVIANIA.svg)](https://github.com/JonusNattapong/AIVIANIA/blob/main/LICENSE)
 
-<p align="center">
-  <a href="https://github.com/JonusNattapong/AIVIANIA/actions"><img src="https://github.com/JonusNattapong/AIVIANIA/workflows/CI/badge.svg" alt="CI"></a>
-  <a href="https://crates.io/crates/aiviania"><img src="https://img.shields.io/crates/v/aiviania.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/aiviania"><img src="https://docs.rs/aiviania/badge.svg" alt="Docs.rs"></a>
-  <a href="https://github.com/JonusNattapong/AIVIANIA/blob/main/LICENSE"><img src="https://img.shields.io/github/license/JonusNattapong/AIVIANIA.svg" alt="License"></a>
-</p>
+AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It provides routing, middleware support, JWT authentication, RBAC (Role-Based Access Control), advanced WebSocket real-time communication with room-based messaging, comprehensive rate limiting, automatic API documentation, SQLite persistence, session management, background job processing, and a plugin system for extensibility, with a focus on enterprise-ready applications.
 
 AIVIANIA is a type-safe, async-first web framework built on tokio and hyper. It provides routing, middleware support, JWT authentication, RBAC (Role-Based Access Control), advanced WebSocket real-time communication with room-based messaging, comprehensive rate limiting, automatic API documentation, SQLite persistence, session management, background job processing, and a plugin system for extensibility, with a focus on enterprise-ready applications.
 
@@ -436,8 +432,6 @@ Coding style: please follow Rust 2021 idioms, run `cargo fmt` before submitting 
     - CSRF, CORS and security header middleware implemented and compiled cleanly under `cargo check`.
 
 If you'd like me to open a PR with these changes or create further unit tests and examples, tell me which next task to pick from the todo list.
-```
-
 ## Session Management
 
 AIVIANIA provides configurable session management with multiple storage backends:
