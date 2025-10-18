@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "message": "Admin Dashboard",
             "data": "This is restricted to admin users only"
         }))
-    }).with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
+    }).with_middleware(Box::new(AuthMiddleware::from_auth_service(auth_service.clone())))
       .with_middleware(Box::new(RoleMiddleware::new("admin", db.clone()))));
 
     // Create server
@@ -132,6 +132,19 @@ Merged PRs: #4, #5
 ---
 
 For full details and examples, see the `examples/` directory and the project CHANGELOG in GitHub releases.
+
+
+### v0.1.5 — 2025-10-18
+
+- Make database migrations idempotent (avoid duplicate column errors when re-running migrations).
+- Add a development binary (`src/main.rs`) and update examples to match current framework APIs.
+- Fix repository and integration tests to run cleanly under the `sqlite` feature.
+- Adjust security integration tests (CSRF/CORS) to be compatible with current reqwest/builders.
+- Misc: compatibility fixes and documentation updates.
+
+Release artifacts: source, examples, and CHANGELOG included in the repo root.
+
+---
 
 ```
 
