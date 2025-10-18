@@ -1,7 +1,6 @@
 use aiviania::observability;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
-use std::sync::Arc;
 
 async fn metrics_handler(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let body = observability::gather_metrics();

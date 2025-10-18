@@ -6,6 +6,7 @@ use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body, Request, Response};
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::middleware::Middleware as CrateMiddleware;
 
 /// Security headers configuration
 #[derive(Debug, Clone)]
@@ -142,6 +143,17 @@ impl SecurityMiddleware for SecurityHeadersMiddleware {
     ) -> SecurityResult<Request<Body>> {
         // This middleware doesn't modify the request, just ensures headers are added to responses
         Ok(request)
+    }
+}
+
+// Adapter implementation so SecurityHeadersMiddleware can be used as a crate::Middleware
+impl CrateMiddleware for SecurityHeadersMiddleware {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+        Box::pin(async move { Ok(req) })
+    }
+
+    fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send + '_>> {
+        Box::pin(async move { resp })
     }
 }
 

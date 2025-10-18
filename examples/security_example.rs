@@ -24,3 +24,9 @@ pub fn demonstrate_security_features() {
     println!("- AIVIANIA_RATE_LIMIT_ENABLED=true");
     println!("- AIVIANIA_LOG_ENABLED=true");
 }
+
+fn main() {
+    // Provide a simple runnable example entrypoint so this file can be built as an
+    // example. It simply prints the demonstration output.
+    demonstrate_security_features();
+}

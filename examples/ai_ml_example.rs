@@ -9,7 +9,7 @@
 
 #[cfg(feature = "ai_ml")]
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use aiviania::ai_ml::{
         config::{ConfigLoader, MlConfig},
         inference::{InferenceEngine, InferenceService},

@@ -34,7 +34,7 @@ impl Default for UploadConfig {
 }
 
 /// Represents an uploaded file
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UploadedFile {
     /// Original filename
     pub filename: String,
@@ -145,6 +145,35 @@ impl UploadManager {
         Ok(files)
     }
 
+    /// Compatibility adapter used by examples: handle_upload takes a mutable Request and
+    /// processes multipart data, returning a Vec<UploadedFile> on success.
+    pub async fn handle_upload(
+        &self,
+        req: &mut hyper::Request<hyper::Body>,
+    ) -> Result<Vec<UploadedFile>, UploadError> {
+        // Extract boundary from content-type
+        let content_type = req
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "".to_string());
+        let boundary = content_type
+            .split("boundary=")
+            .nth(1)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        if boundary.is_empty() {
+            return Err(UploadError::Config("Missing multipart boundary".to_string()));
+        }
+
+    // Move the body out of the request by replacing it with an empty Body
+    let body = std::mem::take(req.body_mut());
+    self.process_multipart(&boundary, body).await
+    }
+
     /// Move uploaded files to permanent storage
     pub async fn store_files(&self, files: &mut [UploadedFile]) -> Result<(), UploadError> {
         // Ensure upload directory exists
@@ -219,6 +248,9 @@ impl UploadManager {
         false
     }
 }
+
+// Re-export alias for backwards compatibility
+pub use UploadManager as UploadService;
 
 /// Errors that can occur during file upload
 #[derive(Debug, thiserror::Error)]

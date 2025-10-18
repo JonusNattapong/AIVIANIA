@@ -1,6 +1,4 @@
-use serde::Serialize;
 use crate::router::Router;
-use std::collections::HashMap;
 
 #[cfg(feature = "utoipa")]
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};

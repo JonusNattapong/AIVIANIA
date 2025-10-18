@@ -14,6 +14,8 @@ pub mod errors;
 pub mod graphql;
 pub mod jobs;
 pub mod metrics;
+pub mod openapi;
+pub mod observability;
 pub mod middleware;
 pub mod middleware_ext;
 pub mod oauth;
@@ -53,6 +55,7 @@ pub use graphql::{
 pub use jobs::RedisJobQueue;
 pub use jobs::{Job, JobManager, JobPriority, JobStatus, JobWorker, MemoryJobQueue};
 pub use middleware::Middleware;
+pub use observability::middleware::MetricsMiddleware;
 pub use oauth::{OAuthConfig, OAuthError, OAuthMiddleware, OAuthService, OAuthTokens, OAuthUser};
 pub use plugin::Plugin;
 pub use request::AivianiaRequest as Request;
@@ -73,3 +76,8 @@ pub use upload::{
     UploadMiddleware, UploadedFile,
 };
 pub use websocket::{WebSocketManager, WebSocketPlugin};
+
+// Backwards-compatible re-exports
+pub use rate_limit::{KeyStrategy, RateLimitBuilder, RateLimitMiddleware, RateLimitConfig};
+pub use openapi::OpenApiService;
+pub use upload::UploadManager as UploadService;

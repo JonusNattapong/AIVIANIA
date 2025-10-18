@@ -7,7 +7,7 @@ use hyper::{Body, Request, StatusCode};
 use std::sync::Arc;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Build router
     let mut router = Router::new();
 
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     router.add_route(Route::new(
         "POST",
         "/submit",
-        |req: Request<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| async move {
+        |_req: Request<Body>, _plugins: Arc<aiviania::plugin::PluginManager>| async move {
             // In a real app you'd validate CSRF token and parse body
             Response::new(StatusCode::OK).json(&serde_json::json!({"ok": true}))
         },
@@ -52,7 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Middleware stack
     let security_headers = SecurityHeadersMiddleware::new();
-    let cors = CorsMiddleware::new(vec!["http://localhost:3000".to_string()]);
+    let cors = CorsMiddleware::with_config(aiviania::security::CorsConfig {
+        allowed_origins: vec!["http://localhost:3000".to_string()],
+        ..Default::default()
+    });
     let metrics = MetricsMiddleware::new();
 
     let server = AivianiaServer::new(router)

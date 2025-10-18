@@ -20,7 +20,18 @@ async fn integration_register_login_rbac() {
     router.add_route(Route::new("POST", "/login", auth::login_handler));
 
     // Initialize database and auth
-    let db = Arc::new(Database::new().await.expect("db create"));
+    // Create a minimal DatabaseConfig for tests
+    let cfg = aiviania::database::DatabaseConfig {
+        database_type: aiviania::database::DatabaseType::Sqlite,
+        connection_string: ":memory:".to_string(),
+        max_connections: 10,
+        min_connections: 1,
+        connection_timeout: 30,
+        acquire_timeout: 30,
+        idle_timeout: 300,
+        max_lifetime: 3600,
+    };
+    let db = Arc::new(Database::new(cfg).await.expect("db create"));
     db.create_default_roles().await.expect("create roles");
 
     let auth_service = Arc::new(AuthService::new("integration-secret-key-which-is-long"));
@@ -34,8 +45,8 @@ async fn integration_register_login_rbac() {
                 Response::new(StatusCode::OK).json(&json!({"ok": true, "role": "user"}))
             },
         )
-        .with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
-        .with_middleware(Box::new(RoleMiddleware::new("user", db.clone()))),
+    .with_middleware(Box::new(AuthMiddleware::from_auth_service(auth_service.clone())))
+    .with_middleware(Box::new(RoleMiddleware::for_db("user", db.clone()))),
     );
 
     router.add_route(
@@ -46,8 +57,8 @@ async fn integration_register_login_rbac() {
                 Response::new(StatusCode::OK).json(&json!({"ok": true, "role": "admin"}))
             },
         )
-        .with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
-        .with_middleware(Box::new(RoleMiddleware::new("admin", db.clone()))),
+    .with_middleware(Box::new(AuthMiddleware::from_auth_service(auth_service.clone())))
+    .with_middleware(Box::new(RoleMiddleware::for_db("admin", db.clone()))),
     );
 
     // Create server and plugins

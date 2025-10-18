@@ -7,7 +7,7 @@ use tokio::task;
 use aiviania::observability::middleware::MetricsMiddleware;
 use aiviania::security::csrf::CsrfProtection;
 use aiviania::security::csrf::CsrfTokenGenerator;
-use aiviania::security::cors::CorsMiddleware;
+use aiviania::security::cors::{CorsConfig, CorsMiddleware};
 use aiviania::security::headers::SecurityHeadersMiddleware;
 use aiviania::{router::Router, router::Route, server::AivianiaServer, response::Response};
 use hyper::{Body, Request, StatusCode};
@@ -49,7 +49,10 @@ async fn start_test_server(port: u16) -> String {
     ));
 
     let security_headers = SecurityHeadersMiddleware::new();
-    let cors = CorsMiddleware::new(vec!["http://localhost:3000".to_string()]);
+    let cors = CorsMiddleware::with_config(CorsConfig {
+        allowed_origins: vec!["http://localhost:3000".to_string()],
+        ..Default::default()
+    });
     let metrics = MetricsMiddleware::new();
 
     let server = AivianiaServer::new(router)
@@ -60,9 +63,10 @@ async fn start_test_server(port: u16) -> String {
 
     let addr = format!("127.0.0.1:{}", port);
 
-    // Spawn server in background
+    // Spawn server in background. Clone addr so we don't move it out of this scope.
+    let addr_clone = addr.clone();
     let _ = tokio::spawn(async move {
-        let _ = server.run(&addr).await;
+        let _ = server.run(&addr_clone).await;
     });
 
     // Give server time to bind
@@ -74,7 +78,7 @@ async fn start_test_server(port: u16) -> String {
 async fn test_csrf_valid_and_invalid() {
     let addr = start_test_server(4005).await;
 
-    let client = Client::builder().cookie_store(true).build().unwrap();
+    let client = Client::new();
 
     // GET /form to receive CSRF token in cookie and header
     let resp = client
@@ -92,6 +96,13 @@ async fn test_csrf_valid_and_invalid() {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
+    // Extract set-cookie and convert to Cookie header value (name=value)
+    let cookie_value = resp
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(';').next().unwrap_or(s).to_string());
+
     // Submit with missing token -> expect failure
     let bad = client
         .post(&format!("http://{}/submit", addr))
@@ -102,16 +113,18 @@ async fn test_csrf_valid_and_invalid() {
 
     assert!(bad.status().is_client_error());
 
-    // Submit with valid header token
+    // Submit with valid header token and cookie
     if let Some(token) = header_token {
-        let ok = client
+        let mut req = client
             .post(&format!("http://{}/submit", addr))
             .header("X-CSRF-Token", token)
-            .body("message=hello")
-            .send()
-            .await
-            .expect("POST with token failed");
+            .body("message=hello");
 
+        if let Some(cookie) = cookie_value {
+            req = req.header("Cookie", cookie);
+        }
+
+        let ok = req.send().await.expect("POST with token failed");
         assert!(ok.status().is_success());
     } else {
         panic!("No csrf header token returned from /form");

@@ -36,6 +36,9 @@ pub struct MiddlewareStack {
     middlewares: Vec<Box<dyn Middleware>>,
 }
 
+// Backwards-compatible re-exports for rate limit helpers that used to live under `middleware`
+pub use crate::rate_limit::{KeyStrategy, RateLimitBuilder, RateLimitMiddleware};
+
 impl MiddlewareStack {
     /// Create a new middleware stack.
     pub fn new() -> Self {
@@ -87,7 +90,7 @@ impl Middleware for LoggingMiddleware {
 // Role-based access control middleware
 pub struct RoleMiddleware {
     required_role: String,
-    user_repo: Arc<crate::database::repositories::UserRepository<crate::database::DatabaseManager>>,
+    user_repo: Arc<crate::database::repositories::UserRepository<Arc<crate::database::DatabaseManager>>>,
     rbac_service: Arc<crate::auth::rbac::RBACService>,
 }
 
@@ -95,7 +98,7 @@ impl RoleMiddleware {
     pub fn new(
         required_role: &str,
         user_repo: Arc<
-            crate::database::repositories::UserRepository<crate::database::DatabaseManager>,
+            crate::database::repositories::UserRepository<Arc<crate::database::DatabaseManager>>,
         >,
         rbac_service: Arc<crate::auth::rbac::RBACService>,
     ) -> Self {
@@ -104,6 +107,15 @@ impl RoleMiddleware {
             user_repo,
             rbac_service,
         }
+    }
+
+    /// Convenience constructor for examples: accept an Arc<DatabaseManager>
+    /// and internally create a UserRepository and RBACService. This is a
+    /// small compatibility helper to avoid updating all examples at once.
+    pub fn for_db(required_role: &str, db: Arc<crate::database::DatabaseManager>) -> Self {
+        let user_repo = Arc::new(crate::database::repositories::UserRepository::new(db.clone()));
+        let rbac_service = Arc::new(crate::auth::rbac::RBACService::new());
+        Self::new(required_role, user_repo, rbac_service)
     }
 }
 

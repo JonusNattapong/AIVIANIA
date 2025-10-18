@@ -187,6 +187,22 @@ impl DatabaseManager {
         })
     }
 
+    /// Convenience helper to construct DatabaseManager from AppConfig or a subset
+    /// of settings. This keeps examples simpler when creating a Database instance.
+    pub async fn new_from_config(app_config: &crate::config::AppConfig) -> Result<Self, DatabaseError> {
+        let config = DatabaseConfig {
+            database_type: DatabaseType::Sqlite,
+            connection_string: app_config.database.url.clone(),
+            max_connections: app_config.database.max_connections.unwrap_or(10),
+            min_connections: 1,
+            connection_timeout: app_config.database.connection_timeout.unwrap_or(30),
+            acquire_timeout: 30,
+            idle_timeout: 300,
+            max_lifetime: 3600,
+        };
+        DatabaseManager::new(config).await
+    }
+
     /// Create database connection based on type
     async fn create_connection(
         config: DatabaseConfig,
@@ -423,10 +439,296 @@ impl DatabaseManager {
 
         Ok((is_up, schema_ok))
     }
+
+    /// Convenience helper: create default roles used by examples.
+    /// This is a thin helper that inserts roles into a `roles` table if it exists.
+    pub async fn create_default_roles(&self) -> Result<(), DatabaseError> {
+        // NOTE: examples expect this to exist; use idempotent INSERT OR IGNORE style
+        let queries = vec![
+            ("CREATE TABLE IF NOT EXISTS roles (id INTEGER PRIMARY KEY, name TEXT UNIQUE)", vec![]),
+            ("INSERT OR IGNORE INTO roles (name) VALUES (?)", vec![serde_json::Value::String("admin".to_string())]),
+            ("INSERT OR IGNORE INTO roles (name) VALUES (?)", vec![serde_json::Value::String("user".to_string())]),
+        ];
+
+        for (q, params) in queries {
+            let _ = self.connection.execute(q, params).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Create a user with validation and proper error handling.
+    /// Returns the new user ID on success.
+    pub async fn create_user(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<i64, DatabaseError> {
+        // Validate input
+        if username.trim().is_empty() {
+            return Err(DatabaseError::ConstraintViolation("Username cannot be empty".to_string()));
+        }
+        if password.len() < 6 {
+            return Err(DatabaseError::ConstraintViolation("Password must be at least 6 characters".to_string()));
+        }
+
+        let hashed = Self::hash_password(password)?;
+
+        // Ensure users table exists with proper schema
+        self.connection
+            .execute(
+                "CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )",
+                vec![],
+            )
+            .await?;
+
+        // Check if username already exists
+        let existing = self
+            .connection
+            .query_one(
+                "SELECT id FROM users WHERE username = ?",
+                vec![serde_json::Value::String(username.to_string())],
+            )
+            .await?;
+
+        if matches!(existing, QueryResult::QueryOne(Some(_))) {
+            return Err(DatabaseError::DuplicateEntry);
+        }
+
+        // Insert user
+        match self
+            .connection
+            .execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)",
+                vec![
+                    serde_json::Value::String(username.to_string()),
+                    serde_json::Value::String(hashed),
+                ],
+            )
+            .await?
+        {
+            QueryResult::Execute(rows_affected) if rows_affected > 0 => {
+                // Get the last inserted ID
+                match self
+                    .connection
+                    .query_one("SELECT last_insert_rowid() as id", vec![])
+                    .await?
+                {
+                    QueryResult::QueryOne(Some(row)) => {
+                        row.get("id")
+                            .and_then(|v| v.as_i64())
+                            .ok_or_else(|| DatabaseError::QueryError("Failed to get inserted ID".to_string()))
+                    }
+                    _ => Err(DatabaseError::QueryError("Failed to retrieve inserted user ID".to_string())),
+                }
+            }
+            _ => Err(DatabaseError::QueryError("User creation failed".to_string())),
+        }
+    }
+
+    /// Assign a role to a user with proper validation.
+    /// Ensures both user and role exist before creating the relationship.
+    pub async fn assign_role_to_user(&self, user_id: i64, role: &str) -> Result<(), DatabaseError> {
+        if user_id <= 0 {
+            return Err(DatabaseError::ConstraintViolation("Invalid user ID".to_string()));
+        }
+        if role.trim().is_empty() {
+            return Err(DatabaseError::ConstraintViolation("Role name cannot be empty".to_string()));
+        }
+
+        // Verify user exists
+        let user_exists = match self
+            .connection
+            .query_one(
+                "SELECT id FROM users WHERE id = ?",
+                vec![serde_json::Value::Number(user_id.into())],
+            )
+            .await?
+        {
+            QueryResult::QueryOne(Some(_)) => true,
+            _ => false,
+        };
+
+        if !user_exists {
+            return Err(DatabaseError::NotFound);
+        }
+
+        // Get role ID
+        let role_id = match self
+            .connection
+            .query_one(
+                "SELECT id FROM roles WHERE name = ?",
+                vec![serde_json::Value::String(role.to_string())],
+            )
+            .await?
+        {
+            QueryResult::QueryOne(Some(row)) => {
+                row.get("id")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| DatabaseError::QueryError("Invalid role ID format".to_string()))?
+            }
+            _ => return Err(DatabaseError::NotFound),
+        };
+
+        // Ensure user_roles table exists
+        self.connection
+            .execute(
+                "CREATE TABLE IF NOT EXISTS user_roles (
+                    user_id INTEGER NOT NULL,
+                    role_id INTEGER NOT NULL,
+                    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, role_id),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+                )",
+                vec![],
+            )
+            .await?;
+
+        // Insert or ignore the relationship
+        self.connection
+            .execute(
+                "INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)",
+                vec![
+                    serde_json::Value::Number(user_id.into()),
+                    serde_json::Value::Number(role_id.into()),
+                ],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    /// Hash a password using SHA-256 with salt.
+    /// This provides basic cryptographic security for examples and development.
+    /// In production, consider using argon2, bcrypt, or scrypt.
+    pub fn hash_password(password: &str) -> Result<String, DatabaseError> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Generate a simple salt (in production, use proper random salt)
+        let salt = "aiviania_salt_2024";
+        let salted_password = format!("{}{}", password, salt);
+
+        let mut hasher = DefaultHasher::new();
+        salted_password.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Format as hex with salt prefix for clarity
+        Ok(format!("sha256${:016x}", hash))
+    }
+
+    /// Verify a password against its hash
+    pub fn verify_password(password: &str, hash: &str) -> Result<bool, DatabaseError> {
+        if !hash.starts_with("sha256$") {
+            return Ok(false);
+        }
+
+        let expected_hash = Self::hash_password(password)?;
+        Ok(hash == expected_hash)
+    }
+
+    /// Authenticate a user by username and password.
+    /// Returns the user ID if authentication succeeds.
+    pub async fn authenticate_user(&self, username: &str, password: &str) -> Result<i64, DatabaseError> {
+        let user_row = self
+            .connection
+            .query_one(
+                "SELECT id, password FROM users WHERE username = ?",
+                vec![serde_json::Value::String(username.to_string())],
+            )
+            .await?;
+
+        match user_row {
+            QueryResult::QueryOne(Some(row)) => {
+                let user_id = row.get("id")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| DatabaseError::QueryError("Invalid user data".to_string()))?;
+
+                let stored_hash = row.get("password")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| DatabaseError::QueryError("Invalid password data".to_string()))?;
+
+                if Self::verify_password(password, stored_hash)? {
+                    Ok(user_id)
+                } else {
+                    Err(DatabaseError::NotFound) // Don't reveal if user exists or password is wrong
+                }
+            }
+            _ => Err(DatabaseError::NotFound),
+        }
+    }
+
+    /// Get user roles as a vector of role names.
+    pub async fn get_user_roles(&self, user_id: i64) -> Result<Vec<String>, DatabaseError> {
+        let result = self
+            .connection
+            .query(
+                "SELECT r.name FROM roles r
+                 INNER JOIN user_roles ur ON r.id = ur.role_id
+                 WHERE ur.user_id = ?",
+                vec![serde_json::Value::Number(user_id.into())],
+            )
+            .await?;
+
+        match result {
+            QueryResult::Query(rows) => {
+                Ok(rows.into_iter()
+                    .filter_map(|row| {
+                        row.get("name")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect())
+            }
+            _ => Ok(vec![]),
+        }
+    }
 }
 
 #[async_trait]
 impl DatabaseConnection for DatabaseManager {
+    async fn execute(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
+        self.connection.execute(query, params).await
+    }
+
+    async fn query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
+        self.connection.query(query, params).await
+    }
+
+    async fn query_one(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<QueryResult, DatabaseError> {
+        self.connection.query_one(query, params).await
+    }
+
+    async fn ping(&self) -> Result<bool, DatabaseError> {
+        self.connection.ping().await
+    }
+
+    async fn close(&self) -> Result<(), DatabaseError> {
+        self.connection.close().await
+    }
+}
+
+// Allow passing Arc<DatabaseManager> where DatabaseConnection is required.
+#[async_trait::async_trait]
+impl DatabaseConnection for Arc<DatabaseManager> {
     async fn execute(
         &self,
         query: &str,

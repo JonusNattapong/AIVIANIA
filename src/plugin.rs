@@ -53,6 +53,9 @@ impl PluginManager {
     }
 }
 
+// Re-export WebSocketPlugin type so examples can import it from `aiviania::plugin::WebSocketPlugin`.
+pub use crate::websocket::WebSocketPlugin;
+
 // Example plugin: AI Plugin
 pub struct AIPlugin {
     api_key: String,

@@ -3,7 +3,7 @@
 //! This example shows how to use the job queue system with different
 //! storage backends and custom job handlers.
 
-use aiviania::jobs::{helpers::*, Job, JobManager, JobPriority, JobWorker, MemoryJobQueue};
+use aiviania::jobs::{helpers::*, Job, JobManager, JobWorker, MemoryJobQueue};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -47,7 +47,7 @@ impl aiviania::jobs::JobHandler for DataProcessor {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("🚀 AIVIANIA Background Jobs Example");
     println!("====================================");
 
@@ -65,8 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add workers to manager
     let manager = manager.add_worker(email_worker).add_worker(data_worker);
 
-    // Start workers in background
-    let manager_clone = manager.clone();
+    // Start workers in background - clone manager by wrapping in Arc for sharing
+    let manager_arc = Arc::new(manager);
+    let manager_clone = Arc::clone(&manager_arc);
     tokio::spawn(async move {
         if let Err(e) = manager_clone.start_workers(&["default"]).await {
             eprintln!("Worker error: {}", e);
@@ -79,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n📋 Enqueueing jobs...");
 
     // Enqueue some jobs
-    let email_job_id = manager
+    let email_job_id = manager_arc
         .enqueue(
             "send_email",
             serde_json::json!({
@@ -92,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("📧 Email job enqueued: {}", email_job_id);
 
-    let data_job_id = manager
+    let data_job_id = manager_arc
         .enqueue(
             "process_data",
             serde_json::json!({
@@ -110,11 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "System Alert",
         "Background job system is working!",
     );
-    let helper_email_id = manager.enqueue_job(helper_email_job).await?;
+    let helper_email_id = manager_arc.enqueue_job(helper_email_job).await?;
     println!("📧 Helper email job enqueued: {}", helper_email_id);
 
     let helper_data_job = create_data_processing_job("batch_001", "analyze");
-    let helper_data_id = manager.enqueue_job(helper_data_job).await?;
+    let helper_data_id = manager_arc.enqueue_job(helper_data_job).await?;
     println!("🔄 Helper data job enqueued: {}", helper_data_id);
 
     // Wait for jobs to be processed
@@ -126,13 +127,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jobs = vec![email_job_id, data_job_id, helper_email_id, helper_data_id];
 
     for job_id in jobs {
-        if let Ok(Some(job)) = manager.get_job(&job_id).await {
+        if let Ok(Some(job)) = manager_arc.get_job(&job_id).await {
             println!("Job {}: {:?}", job_id, job.status);
         }
     }
 
     // Check queue status
-    let pending_count = manager.pending_count("default").await?;
+    let pending_count = manager_arc.pending_count("default").await?;
     println!("\n📈 Pending jobs in queue: {}", pending_count);
 
     println!("\n✨ Background jobs example completed!");

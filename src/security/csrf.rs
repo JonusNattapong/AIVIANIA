@@ -2,11 +2,12 @@
 
 use super::{SecurityError, SecurityEvent, SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
-use hyper::{Body, Request};
+use hyper::{Body, Request, Response};
 use rand::Rng;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::middleware::Middleware as CrateMiddleware;
 
 /// CSRF protection middleware
 pub struct CsrfProtection {
@@ -176,6 +177,13 @@ impl CsrfTokenGenerator {
         Self { protection }
     }
 
+    /// Allow cloning the token generator (shallow clone of Arc)
+    pub fn clone(&self) -> Self {
+        Self {
+            protection: Arc::clone(&self.protection),
+        }
+    }
+
     /// Generate and store a new token
     pub async fn generate_token(&self) -> String {
         let token = CsrfProtection::generate_token();
@@ -302,6 +310,24 @@ impl SecurityMiddleware for DoubleSubmitCookieProtection {
         }
 
         Ok(request)
+    }
+}
+
+// Allow Arc<CsrfProtection> to be used where crate::Middleware is expected by
+// providing a thin adapter that calls the SecurityMiddleware::process method.
+impl CrateMiddleware for Arc<CsrfProtection> {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+        let inner = self.clone();
+        Box::pin(async move {
+            match inner.process(req, Arc::new(super::SecurityEventLogger::new(100))).await {
+                Ok(r) => Ok(r),
+                Err(e) => Err(Response::builder().status(400).body(Body::from(format!("CSRF error: {}", e))).unwrap()),
+            }
+        })
+    }
+
+    fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send + '_>> {
+        Box::pin(async move { resp })
     }
 }
 

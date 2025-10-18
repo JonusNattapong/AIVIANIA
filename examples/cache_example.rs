@@ -8,7 +8,7 @@
 
 #[cfg(feature = "cache")]
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use aiviania::cache::{
         backends::{create_backend, CacheBackendType},
         config::CacheConfigBuilder,

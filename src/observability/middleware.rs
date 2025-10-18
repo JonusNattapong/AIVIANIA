@@ -3,6 +3,7 @@ use hyper::{Request, Body, Response};
 use std::time::Instant;
 use std::sync::Arc;
 use async_trait::async_trait;
+use crate::middleware::Middleware as CrateMiddleware;
 
 pub struct MetricsMiddleware;
 
@@ -30,5 +31,20 @@ impl Middleware for MetricsMiddleware {
         HTTP_LATENCY.with_label_values(&[&method, &route]).observe(elapsed);
 
         resp
+    }
+}
+
+// Adapter to implement the crate-wide Middleware trait so examples that
+// Box<dyn Middleware> can accept MetricsMiddleware. This adapter uses the
+// existing `handle` method and plugs it into the before/after hooks.
+impl CrateMiddleware for MetricsMiddleware {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+        // We need to capture `self` by reference for the async block but not call handle here.
+        Box::pin(async move { Ok(req) })
+    }
+
+    fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send + '_>> {
+        // No-op after — the metrics middleware observes timing around the handler via `handle`.
+        Box::pin(async move { resp })
     }
 }

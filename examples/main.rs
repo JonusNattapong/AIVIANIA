@@ -72,8 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     router.add_route(Route::new("POST", "/register", register_handler));
 
     // Initialize database and auth_service using config
-    let auth_service = Arc::new(AuthService::new(&config.auth.jwt_secret));
-    let db = Arc::new(Database::new().await?);
+    let jwt_config = aiviania::auth::jwt::JwtConfig { secret: config.auth.jwt_secret.clone(), ..Default::default() };
+    let auth_service = Arc::new(AuthService::new(&jwt_config.secret));
+    let db = Arc::new(Database::new_from_config(&config).await?);
 
     router.add_route(
         Route::new(
@@ -86,8 +87,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }))
             },
         )
-        .with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
-        .with_middleware(Box::new(RoleMiddleware::new("admin", db.clone()))),
+    .with_middleware(Box::new(AuthMiddleware::from_auth_service(auth_service.clone())))
+    .with_middleware(Box::new(RoleMiddleware::for_db("admin", db.clone()))),
     );
 
     router.add_route(
@@ -101,8 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }))
             },
         )
-        .with_middleware(Box::new(AuthMiddleware::new(auth_service.clone())))
-        .with_middleware(Box::new(RoleMiddleware::new("user", db.clone()))),
+    .with_middleware(Box::new(AuthMiddleware::from_auth_service(auth_service.clone())))
+    .with_middleware(Box::new(RoleMiddleware::for_db("user", db.clone()))),
     );
 
     // Add WebSocket route
@@ -112,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         |req: Request<Body>, plugins: Arc<PluginManager>| async move {
             if let Some(ws_plugin) = plugins.get("websocket") {
                 if let Some(ws_handler) = ws_plugin.as_any().downcast_ref::<WebSocketPlugin>() {
-                    match ws_handler.handler().handle_upgrade(req).await {
+                    match ws_handler.handle_upgrade(req, None).await {
                         Ok(hyper_response) => {
                             let mut response = Response::new(hyper_response.status());
                             // Copy headers from hyper response
@@ -164,7 +165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             }
                             match serde_json::from_slice::<BroadcastRequest>(&body) {
                                 Ok(broadcast_req) => {
-                                    ws_handler.handler().broadcast(&broadcast_req.message);
+                                    // Use WebSocketPlugin manager to broadcast
+                                    let manager = ws_handler.manager();
+                                    let _ = manager.broadcast(&broadcast_req.message).await;
                                     return Response::new(StatusCode::OK)
                                         .json(&serde_json::json!({"status": "broadcasted"}));
                                 }
@@ -187,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     // Create database
-    let db = Arc::new(Database::new().await?);
+    let db = Arc::new(Database::new_from_config(&config).await?);
 
     // Create default roles
     db.create_default_roles().await?;
@@ -203,8 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_middleware(Box::new(LoggingMiddleware))
         .with_plugin(Box::new(AIPlugin::new("dummy-api-key".to_string())))
         .with_plugin(Box::new(DatabasePlugin::new(db)))
-        .with_plugin(Box::new(WebSocketPlugin::new()))
-        .with_plugin(Box::new(AuthService::new(&config.auth.jwt_secret)));
+        .with_plugin(Box::new(WebSocketPlugin::new()));
 
     // Note: Auth service is now added as a plugin for token generation
 

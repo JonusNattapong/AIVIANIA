@@ -2,7 +2,7 @@
 //!
 //! This module provides Response helpers for JSON, HTML, and custom responses.
 
-use hyper::{Body, Response, StatusCode};
+use hyper::{Body, Response as HyperResponse, StatusCode};
 use serde::Serialize;
 
 /// Response wrapper with helpers.
@@ -52,15 +52,18 @@ impl AivianiaResponse {
     }
 }
 
-impl From<AivianiaResponse> for Response<Body> {
+impl From<AivianiaResponse> for HyperResponse<Body> {
     fn from(resp: AivianiaResponse) -> Self {
-        let mut builder = Response::builder().status(resp.status);
+        let mut builder = HyperResponse::builder().status(resp.status);
         for (key, value) in resp.headers {
             builder = builder.header(key, value);
         }
         builder.body(resp.body).unwrap()
     }
 }
+
+// Make a module-level alias so `aiviania::response::Response` resolves for examples
+pub use AivianiaResponse as Response;
 
 #[cfg(test)]
 mod tests {
@@ -88,7 +91,7 @@ mod tests {
         );
 
         // Convert to hyper response and check body
-        let hyper_resp: Response<Body> = resp.into();
+        let hyper_resp: HyperResponse<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
         assert_eq!(
             hyper_resp.headers().get("content-type").unwrap(),
@@ -108,7 +111,7 @@ mod tests {
             ("Content-Type".to_string(), "text/html".to_string())
         );
 
-        let hyper_resp: Response<Body> = resp.into();
+        let hyper_resp: HyperResponse<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
         assert_eq!(
             hyper_resp.headers().get("content-type").unwrap(),
@@ -136,7 +139,7 @@ mod tests {
         let body_content = "Custom body content";
         let resp = AivianiaResponse::new(StatusCode::OK).body(Body::from(body_content));
 
-        let hyper_resp: Response<Body> = resp.into();
+        let hyper_resp: HyperResponse<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::OK);
     }
 
@@ -146,7 +149,7 @@ mod tests {
             .header("X-Error", "Not Found")
             .json(&json!({"error": "Resource not found"}));
 
-        let hyper_resp: Response<Body> = resp.into();
+        let hyper_resp: HyperResponse<Body> = resp.into();
         assert_eq!(hyper_resp.status(), StatusCode::NOT_FOUND);
         assert_eq!(hyper_resp.headers().get("x-error").unwrap(), "Not Found");
         assert_eq!(

@@ -30,6 +30,13 @@ impl AuthMiddleware {
         }
     }
 
+    /// Create a new authentication middleware from an `AuthServiceWrapper` instance.
+    /// This is a compatibility helper so examples that construct an `AuthService` (the
+    /// backwards-compatible wrapper) can pass it directly.
+    pub fn from_auth_service(auth_service: Arc<crate::auth::AuthService>) -> Self {
+        AuthMiddleware::new(auth_service.inner())
+    }
+
     /// Create a new authentication middleware with JWT and session support
     pub fn with_session(
         jwt_service: Arc<JwtService>,

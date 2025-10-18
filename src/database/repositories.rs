@@ -362,6 +362,7 @@ mod tests {
     #[cfg(feature = "sqlite")]
     async fn test_user_repository() {
         use tempfile::NamedTempFile;
+        use std::sync::Arc;
 
         let temp_file = NamedTempFile::new().unwrap();
         let db_path = temp_file.path().to_str().unwrap();
@@ -378,16 +379,18 @@ mod tests {
         };
 
         let db_manager = DatabaseManager::new(config).await.unwrap();
-        let connection = db_manager.connection().as_ref();
 
-        // Run migrations
+        // Wrap manager in Arc so we can pass Arc<DatabaseManager> which implements DatabaseConnection
+        let db = Arc::new(db_manager);
+
+        // Run migrations (migration.up expects a &dyn DatabaseConnection)
         let migrations = crate::database::migrations::get_example_migrations();
         for migration in migrations {
-            migration.up(connection).await.unwrap();
+            migration.up(db.connection().as_ref()).await.unwrap();
         }
 
-        // Test repository
-        let repo = UserRepository::new(connection);
+        // Test repository using Arc<DatabaseManager>
+        let repo = UserRepository::new(db.clone());
 
         // Create user
         let mut user = User::new(
@@ -398,25 +401,16 @@ mod tests {
         user.first_name = Some("Test".to_string());
         user.last_name = Some("User".to_string());
 
-        let created_user = repo.create(&user).await.unwrap();
+        let created_id = repo.save(user.clone()).await.unwrap();
+        let created_user = repo.find_by_id(created_id).await.unwrap().unwrap();
         assert_eq!(created_user.username, "testuser");
         assert!(created_user.id.is_some());
 
-        // Find user
-        let found_user = repo
-            .find_by_id(created_user.id.unwrap())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(found_user.username, "testuser");
-
         // Update user
-        let mut updated_user = found_user.clone();
+        let mut updated_user = created_user.clone();
         updated_user.first_name = Some("Updated".to_string());
-        let updated = repo
-            .update(updated_user.id.unwrap(), &updated_user)
-            .await
-            .unwrap();
+        repo.update(updated_user.clone()).await.unwrap();
+        let updated = repo.find_by_id(updated_user.id.unwrap()).await.unwrap().unwrap();
         assert_eq!(updated.first_name, Some("Updated".to_string()));
 
         // Find all users
@@ -424,7 +418,7 @@ mod tests {
         assert_eq!(all_users.len(), 1);
 
         // Delete user
-        repo.delete(updated.id.unwrap()).await.unwrap();
+        repo.delete_by_id(updated.id.unwrap()).await.unwrap();
 
         // Verify deletion
         let deleted_user = repo.find_by_id(updated.id.unwrap()).await.unwrap();

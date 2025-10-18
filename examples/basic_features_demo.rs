@@ -6,7 +6,10 @@
 //! - OpenAPI/Swagger documentation generation
 
 use aiviania::*;
-use hyper::{Body, Request, Response, StatusCode};
+use aiviania::response::AivianiaResponse;
+use aiviania::server::AivianiaServer;
+use aiviania::plugin::PluginManager;
+use hyper::{Body, Request, StatusCode};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -52,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "GET",
         "/health",
         |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-            Response::new(StatusCode::OK).json(&HealthResponse {
+            AivianiaResponse::new(StatusCode::OK).json(&HealthResponse {
                 status: "healthy".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 websocket_enabled: true,
@@ -67,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "GET",
         "/api/demo",
         |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-            Response::new(StatusCode::OK).json(&ApiResponse {
+            AivianiaResponse::new(StatusCode::OK).json(&ApiResponse {
                 message: "This endpoint is rate limited to 100 requests per minute per IP"
                     .to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -81,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "/ws",
         |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
             // In a real implementation, this would handle WebSocket upgrade
-            Response::new(StatusCode::OK).json(&serde_json::json!({
+            AivianiaResponse::new(StatusCode::OK).json(&serde_json::json!({
                 "message": "WebSocket endpoint - use a WebSocket client to connect",
                 "features": ["room-based messaging", "JSON protocols", "user management"],
                 "example_message": "{\"type\": \"join\", \"room\": \"chat_room_1\"}"
@@ -91,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // API Documentation endpoint (simplified)
     router.add_route(Route::new("GET", "/api-docs", |_req: Request<Body>, _plugins: Arc<PluginManager>| async move {
-        Response::new(StatusCode::OK).json(&serde_json::json!({
+        AivianiaResponse::new(StatusCode::OK).json(&serde_json::json!({
             "openapi": "3.0.0",
             "info": {
                 "title": "AIVIANIA API",
@@ -127,8 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }));
 
     // Create and start server
-    let server = Server::new(config, router, PluginManager::new());
-
+    let server = AivianiaServer::new(router);
     println!("\n📋 Available endpoints:");
     println!("  GET  /health              - Health check with feature status");
     println!("  GET  /api-docs            - OpenAPI specification");
@@ -141,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("  {{\"type\": \"private_message\", \"user_id\": \"user123\", \"message\": \"Hi!\"}}");
     println!("  {{\"type\": \"broadcast\", \"message\": \"Global message\"}}");
 
-    server.start().await?;
+    server.run(&config.server_addr()).await?;
 
     Ok(())
 }

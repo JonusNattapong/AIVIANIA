@@ -1,6 +1,7 @@
+pub mod middleware;
+
 use prometheus::{Encoder, TextEncoder, Registry, IntCounterVec, HistogramVec, opts, histogram_opts};
 use once_cell::sync::Lazy;
-use std::sync::Arc;
 
 pub static REGISTRY: Lazy<Registry> = Lazy::new(|| Registry::new());
 

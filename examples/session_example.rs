@@ -8,7 +8,7 @@ use aiviania::{
     response::AivianiaResponse,
     router::{Route, Router},
     server::AivianiaServer,
-    session::{MemorySessionStore, SessionManager, SessionMiddleware},
+    session::{SessionManager, SessionMiddleware},
 };
 use hyper::{Body, StatusCode};
 use std::sync::Arc;
@@ -35,7 +35,7 @@ async fn session_example_handler(req: AivianiaRequest) -> AivianiaResponse {
     }
 }
 
-async fn create_session_handler(req: AivianiaRequest) -> AivianiaResponse {
+async fn create_session_handler(_req: AivianiaRequest) -> AivianiaResponse {
     // This would typically be done in middleware or a more complex handler
     // For demonstration, we'll just return a message
     AivianiaResponse::new(StatusCode::OK).body(Body::from(
@@ -44,26 +44,36 @@ async fn create_session_handler(req: AivianiaRequest) -> AivianiaResponse {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Create session manager with memory store
     let session_manager = Arc::new(SessionManager::new());
 
-    // Create session middleware
-    let session_middleware = Arc::new(SessionMiddleware::new(session_manager.clone()));
-
-    // Create router with session middleware
+    // Create router
     let mut router = Router::new();
 
-    // Add session middleware to the router
-    router.add_middleware(session_middleware);
+    // Add routes (wrap existing handlers to match the Route handler signature)
+    let session_manager_clone = session_manager.clone();
+    router.add_route(
+        Route::new("GET", "/", move |req, _plugins| {
+            let _session_manager = session_manager_clone.clone();
+            async move { session_example_handler(req).await }
+        }),
+    );
 
-    // Add routes
-    router.add_route(Route::get("/", session_example_handler));
-    router.add_route(Route::get("/create-session", create_session_handler));
+    let session_manager_clone2 = session_manager.clone();
+    router.add_route(
+        Route::new("GET", "/create-session", move |req, _plugins| {
+            let _session_manager = session_manager_clone2.clone();
+            async move { create_session_handler(req).await }
+        }),
+    );
 
-    // Create and start server
-    let server = AivianiaServer::new("127.0.0.1:3000".parse()?);
-    server.serve(router).await?;
+    // Create server with router and attach session middleware at server level
+    let server = AivianiaServer::new(router).with_middleware(Box::new(SessionMiddleware::new(
+        session_manager.clone(),
+    )));
+
+    server.run("127.0.0.1:3000").await?;
 
     Ok(())
 }

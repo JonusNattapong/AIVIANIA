@@ -4,6 +4,7 @@ use super::{SecurityError, SecurityEvent, SecurityMiddleware, SecurityResult};
 use async_trait::async_trait;
 use hyper::{Body, Method, Request, Response};
 use std::sync::Arc;
+use crate::middleware::Middleware as CrateMiddleware;
 
 /// CORS configuration
 #[derive(Debug, Clone)]
@@ -46,6 +47,20 @@ impl Default for CorsConfig {
     }
 }
 
+// Module-level conversion from shared security::CorsConfig to local CorsConfig
+impl From<super::CorsConfig> for CorsConfig {
+    fn from(shared: super::CorsConfig) -> Self {
+        CorsConfig {
+            allowed_origins: shared.allowed_origins,
+            allowed_methods: shared.allowed_methods,
+            allowed_headers: shared.allowed_headers,
+            allow_credentials: shared.allow_credentials,
+            max_age: shared.max_age.map(|v| v as u64),
+            expose_headers: shared.exposed_headers,
+        }
+    }
+}
+
 /// CORS middleware
 pub struct CorsMiddleware {
     config: CorsConfig,
@@ -61,9 +76,11 @@ impl CorsMiddleware {
     }
 
     /// Create a new CORS middleware with custom config
-    pub fn with_config(config: CorsConfig) -> Self {
-        Self { config }
+    pub fn with_config<C: Into<CorsConfig>>(config: C) -> Self {
+        Self { config: config.into() }
     }
+
+    /// Compatibility: convert from the shared `security::CorsConfig` defined in `security::config`.
 
     /// Check if origin is allowed
     fn is_origin_allowed(&self, origin: &str) -> bool {
@@ -287,6 +304,33 @@ impl CorsResponseProcessor {
         }
 
         response
+    }
+}
+
+// Adapter to implement crate::Middleware for CorsMiddleware
+impl CrateMiddleware for CorsMiddleware {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+        Box::pin(async move { Ok(req) })
+    }
+
+    fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send + '_>> {
+        Box::pin(async move { resp })
+    }
+}
+
+impl crate::middleware::Middleware for Arc<CorsMiddleware> {
+    fn before(&self, req: Request<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Request<Body>, Response<Body>>> + Send + '_>> {
+        let inner = self.clone();
+        Box::pin(async move {
+            match inner.process(req, Arc::new(super::SecurityEventLogger::new(100))).await {
+                Ok(r) => Ok(r),
+                Err(e) => Err(Response::builder().status(403).body(Body::from(format!("CORS error: {}", e))).unwrap()),
+            }
+        })
+    }
+
+    fn after(&self, resp: Response<Body>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response<Body>> + Send + '_>> {
+        Box::pin(async move { resp })
     }
 }
 
